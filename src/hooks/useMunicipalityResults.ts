@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchResult } from '../lib/tse/client';
 import { parseResult, resolveMapLeader } from '../lib/tse/parse';
 import { MAP_NOTE, NEUTRAL_COLOR } from './useStateLeaders';
-import type { MunicipalityRef, OfficeId, Round } from '../lib/tse/types';
+import type { MunicipalityRef, CandidateRow, OfficeId, Round } from '../lib/tse/types';
 
 export interface MunLeader {
   ibgeCode: string;
@@ -13,6 +13,7 @@ export interface MunLeader {
   leaderPct: number;
   margin: number;
   note?: string;
+  candidates?: CandidateRow[];
   loading: boolean;
 }
 
@@ -68,6 +69,7 @@ export function useMunicipalityResults(
                 tseCode: m.tseCode,
                 name: m.name,
                 leaderId: top?.sqcand,
+                candidates: parsed.candidates,
                 leaderColor: top?.color ?? NEUTRAL_COLOR,
                 leaderPct: top?.percent ?? 0,
                 margin,

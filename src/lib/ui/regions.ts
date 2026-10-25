@@ -10,6 +10,8 @@ export interface RegionView {
   leaderName?: string;
   leaderId?: string;
   color?: string;
+  votes?: number;
+  rank?: number;
   pct: number;
   margin: number;
   note?: string;

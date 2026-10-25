@@ -51,7 +51,7 @@ export interface ParsedResult {
   electionId: string;
   round: Round;
   officeId: OfficeId;
-  scope: 'br' | 'uf' | 'mu';
+  scope: 'br' | 'uf' | 'mu' | 'zona';
   scopeCode: string;
   scopeLabel: string;
   finished: boolean;

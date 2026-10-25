@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { fetchResult } from '../lib/tse/client';
 import { parseResult, resolveMapLeader } from '../lib/tse/parse';
 import { UF_LIST } from '../lib/tse/config';
-import type { OfficeId, Round } from '../lib/tse/types';
+import type { CandidateRow, OfficeId, Round } from '../lib/tse/types';
 
 /** Cor neutra do mapa quando não há líder (sem votos ou empate). */
 export const NEUTRAL_COLOR = '#52525b';
@@ -18,6 +18,7 @@ export interface StateLeader {
   leaderName?: string;
   /** Texto do tooltip quando não há líder (sem votos ou empate). */
   note?: string;
+  candidates?: CandidateRow[];
   loading: boolean;
 }
 
@@ -54,6 +55,7 @@ export function useStateLeaders(round: Round, officeId: OfficeId, enabled: boole
               slug: uf.slug,
               sigla: uf.sigla,
               name: uf.name,
+              candidates: parsed.candidates,
               leaderColor: lead?.color ?? NEUTRAL_COLOR,
               leaderPct: lead?.percent ?? 0,
               margin,
