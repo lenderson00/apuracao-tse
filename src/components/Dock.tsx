@@ -536,11 +536,12 @@ function Side({
             {c.party} {c.number}
           </span>
         </p>
-        <div className={clsx('mt-0.5 flex items-baseline gap-2.5', right && 'flex-row-reverse')}>
+        {/* o total de votos vai para a linha de baixo quando não cabe ao lado do %; nunca é cortado */}
+        <div className={clsx('mt-0.5 flex flex-wrap items-baseline gap-x-2.5', right && 'flex-row-reverse')}>
           <span style={{ color }} className="shrink-0">
             <Pct value={c.percent} className="nf-big text-[2.25rem] font-medium leading-[2.5rem] tracking-[-0.035em] xl:text-[2.5rem]" />
           </span>
-          <span className="tnum truncate font-mono text-micro text-ink-2">
+          <span className="tnum shrink-0 whitespace-nowrap font-mono text-micro text-ink-2">
             <Int value={c.votes} /> votos
           </span>
         </div>
@@ -551,15 +552,15 @@ function Side({
 
 function Center({ started, lead, diff }: { started: boolean; lead: CandidateRow | null; diff: number }) {
   return (
-    <div className="flex w-28 flex-col items-center gap-1 text-center xl:w-32">
+    <div className="flex w-28 min-w-0 flex-col items-center gap-1 text-center xl:w-32">
       {started ? (
         lead ? (
           <>
             <span className="eyebrow">Vantagem</span>
-            <span className="tnum text-small font-medium text-ink">
+            <span className="tnum whitespace-nowrap text-small font-medium text-ink">
               <Int value={diff} /> votos
             </span>
-            <span className="pill" style={{ color: candText(lead.color) }}>
+            <span className="pill max-w-full truncate" style={{ color: candText(lead.color) }}>
               {titleCase(lead.shortName.split(' ')[0])}
             </span>
           </>
