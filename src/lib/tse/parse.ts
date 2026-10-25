@@ -110,7 +110,7 @@ export function parseResult(
     electionId: raw.ele,
     round: meta.round,
     officeId: meta.officeId,
-    scope: raw.tpabr as 'br' | 'uf' | 'mu',
+    scope: raw.tpabr as ParsedResult['scope'],
     scopeCode: raw.cdabr,
     scopeLabel: meta.scopeLabel,
     finished: raw.and === 'f',

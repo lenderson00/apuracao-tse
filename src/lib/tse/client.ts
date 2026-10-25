@@ -89,3 +89,22 @@ export function fetchMunicipalityIndex(electionId: string): Promise<TseMunConfig
 export async function fetchEleConfig(): Promise<unknown> {
   return fetchJson(`${TSE_BASE}/oficial/comum/config/ele-c.json`);
 }
+
+/** Resultado de uma zona eleitoral dentro de um município (o TSE publica mun+zona). */
+export function zoneResultUrl(electionId: string, ufSlug: string, munTse: string, zona: string, officeId: OfficeId): string {
+  const cargo = officeId.padStart(4, '0');
+  const ele = electionId.padStart(6, '0');
+  return `${TSE_BASE}/oficial/ele2026/${electionId}/dados/${ufSlug}/${ufSlug}${munTse}-z${zona}-c${cargo}-e${ele}-u.json`;
+}
+
+export async function fetchZoneResult(
+  round: Round,
+  officeId: OfficeId,
+  ufSlug: string,
+  munTse: string,
+  zona: string,
+): Promise<TseResultFile> {
+  const office = officeForRound(officeId, round);
+  if (!office) throw new Error('Cargo indisponível neste turno');
+  return fetchJson<TseResultFile>(zoneResultUrl(office.electionCode(round), ufSlug, munTse, zona, officeId));
+}

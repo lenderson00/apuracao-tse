@@ -15,6 +15,8 @@ export interface MunicipalityRef {
   name: string;
   uf: string;
   capital: boolean;
+  /** Zonas eleitorais que atendem o município (4 dígitos), do mun-e*-cm.json. */
+  zones: string[];
 }
 
 export interface CandidateRow {
@@ -49,7 +51,7 @@ export interface ParsedResult {
   electionId: string;
   round: Round;
   officeId: OfficeId;
-  scope: 'br' | 'uf' | 'mu';
+  scope: 'br' | 'uf' | 'mu' | 'zona';
   scopeCode: string;
   scopeLabel: string;
   finished: boolean;
@@ -62,7 +64,7 @@ export interface TseMunConfig {
   abr: Array<{
     cd: string;
     ds: string;
-    mu: Array<{ cd: string; cdi: string; nm: string; c: string }>;
+    mu: Array<{ cd: string; cdi: string; nm: string; c: string; z?: string[] }>;
   }>;
 }
 

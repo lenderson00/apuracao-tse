@@ -696,3 +696,20 @@
     display: none;
   }
 }
+
+/* Conteúdo compacto do dock: divisores simples, sem cartões aninhados. */
+.zone-detail { min-height: 0; }
+.section-workspace { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 20px; height: min(33dvh, 310px); }
+.section-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; align-content: start; min-height: 0; }
+.section-chip { height: 26px; border-radius: 4px; background: rgb(255 255 255 / .045); color: var(--text-2); font: 11px var(--font-mono); }
+.section-chip:hover { background: var(--hover); }
+.section-chip.is-active { background: var(--text); color: var(--surface); font-weight: 600; }
+.section-arrow { width: 28px; height: 26px; border-radius: 4px; background: rgb(255 255 255 / .06); }
+.section-arrow:disabled { opacity: .25; }
+.bu-vote { padding-block: 4px; }
+@media (max-width: 1023px) {
+  .section-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: 88px minmax(0, 1fr); gap: 10px; height: 380px; max-height: 52dvh; }
+  .section-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+  .section-chip { height: 25px; }
+  .bu-vote { padding-block: 3px; }
+}

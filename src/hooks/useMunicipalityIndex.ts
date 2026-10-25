@@ -15,6 +15,7 @@ function flattenIndex(raw: Awaited<ReturnType<typeof fetchMunicipalityIndex>>): 
         name: mu.nm,
         uf: uf.cd.toUpperCase(),
         capital: mu.c === 's',
+        zones: mu.z ?? [],
       });
     }
   }

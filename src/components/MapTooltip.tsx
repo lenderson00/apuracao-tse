@@ -43,12 +43,7 @@ export function MapTooltip({ info, awaiting, docked, onClose, style, ref }: Prop
             <p className="truncate text-small font-medium text-ink">{info.title}</p>
             <span className="shrink-0 font-mono text-nano text-ink-3">{info.tag}</span>
             {docked && onClose && (
-              <button
-                type="button"
-                onClick={onClose}
-                className="btn btn-icon -my-2 -mr-2 shrink-0"
-                aria-label="Fechar"
-              >
+              <button type="button" onClick={onClose} className="btn btn-icon -my-2 -mr-2 shrink-0" aria-label="Fechar">
                 <Icon name="close" size={14} />
               </button>
             )}
@@ -80,10 +75,13 @@ function Body({ view, note, awaiting }: { view?: RegionView; note?: string; awai
         <span className="min-w-0 flex-1 truncate">{view.leaderName ? titleCase(view.leaderName) : 'Líder'}</span>
         <span className="tnum font-medium text-ink">{fmtPct1(view.pct)}</span>
       </p>
-      {view.margin > 0 && (
-        <p className="tnum mt-0.5 pl-4 font-mono text-nano text-ink-3">
-          {fmtPct1(view.margin).replace('%', '')} p.p. à frente
+      {view.votes !== undefined && (
+        <p className="mt-1 text-caption text-ink-3">
+          {view.votes.toLocaleString('pt-BR')} votos · {view.rank ? `${view.rank}º lugar` : 'Sem candidatura neste local'}
         </p>
+      )}
+      {view.margin > 0 && (
+        <p className="tnum mt-0.5 pl-4 font-mono text-nano text-ink-3">{fmtPct1(view.margin).replace('%', '')} p.p. à frente</p>
       )}
     </>
   );

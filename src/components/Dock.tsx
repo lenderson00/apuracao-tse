@@ -12,9 +12,14 @@ import { StatusPill } from './Status';
 import { Icon } from './ui/Icon';
 import { Int, Pct } from './ui/Num';
 import { Skeleton } from './ui/Skeleton';
+import { DetailTabs } from './Zones';
 import { Tabs } from './ui/Tabs';
 
 interface Props {
+  selectionKey: string;
+  candidateLabel?: string;
+  candidatePanel?: ReactNode;
+  zonesPanel?: ReactNode;
   mode: 'desktop' | 'mobile';
   kindLabel: string;
   title: string;
@@ -61,7 +66,18 @@ export function Dock(props: Props) {
   useLayoutEffect(() => {
     const el = rootRef.current;
     if (!el || prefersReducedMotion()) return;
-    gsap.fromTo(el, { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, ease: 'power3.out', delay: 0.25, clearProps: 'transform,opacity' });
+    gsap.fromTo(
+      el,
+      { y: 18, opacity: 0 },
+      {
+        y: 0,
+        opacity: 1,
+        duration: 0.7,
+        ease: 'power3.out',
+        delay: 0.25,
+        clearProps: 'transform,opacity',
+      },
+    );
   }, []);
 
   /* troca de recorte: as linhas entram em stagger curto (os números morfam sozinhos) */
@@ -77,7 +93,15 @@ export function Dock(props: Props) {
     gsap.fromTo(
       el.querySelectorAll('[data-dock-anim]'),
       { opacity: 0.35, y: 3 },
-      { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out', stagger: 0.025, overwrite: true, clearProps: 'transform,opacity' },
+      {
+        opacity: 1,
+        y: 0,
+        duration: 0.4,
+        ease: 'power2.out',
+        stagger: 0.025,
+        overwrite: true,
+        clearProps: 'transform,opacity',
+      },
     );
   }, [dataKey]);
 
@@ -97,38 +121,63 @@ export function Dock(props: Props) {
       data-expanded={expanded}
       className="panel pointer-events-auto flex max-h-[min(64dvh,580px)] flex-col px-4 pb-3.5 pt-3"
     >
-      <Header
-        {...props}
-        tabs={
-          historyKey && !alt ? (
-            <Tabs
-              label="Visualização"
-              value={activeView}
-              onChange={setView}
-              className="shrink-0"
-              items={[
-                { value: 'res', label: 'Resultado' },
-                { value: 'evo', label: 'Evolução' },
-              ]}
-            />
-          ) : null
-        }
-      />
-      {alt ? (
-        <div className="pt-3">{alt}</div>
-      ) : activeView === 'evo' && historyKey ? (
-        <div className="mt-2.5">
-          <Evolution mode="desktop" data={data} historyKey={historyKey} placeLabel={props.title} />
-        </div>
+      {props.zonesPanel || props.candidatePanel ? (
+        <>
+          <Header {...props} />
+          <DetailTabs
+            key={`${props.selectionKey}-${props.candidatePanel ? 'candidate' : 'normal'}`}
+            result={
+              alt ?? (
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <Candidates {...props} expanded onToggle={() => undefined} listOnly />
+                  <StatRows data={data} />
+                </div>
+              )
+            }
+            candidate={props.candidatePanel}
+            candidateLabel={props.candidateLabel}
+            zones={props.zonesPanel}
+            evolution={
+              historyKey && !alt ? <Evolution mode="desktop" data={data} historyKey={historyKey} placeLabel={props.title} /> : undefined
+            }
+          />
+        </>
       ) : (
-        <div className="mt-2.5 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(20rem,25rem)] gap-4 xl:gap-5">
-          <div className="flex min-h-0 flex-col">
-            <Candidates {...props} expanded={expanded} onToggle={() => setExpanded((v) => !v)} />
-          </div>
-          <div className="border-l border-line pl-4 xl:pl-5">
-            <StatRows data={data} columns={2} />
-          </div>
-        </div>
+        <>
+          <Header
+            {...props}
+            tabs={
+              historyKey && !alt ? (
+                <Tabs
+                  label="Visualização"
+                  value={activeView}
+                  onChange={setView}
+                  className="shrink-0"
+                  items={[
+                    { value: 'res', label: 'Resultado' },
+                    { value: 'evo', label: 'Evolução' },
+                  ]}
+                />
+              ) : null
+            }
+          />
+          {alt ? (
+            <div className="pt-3">{alt}</div>
+          ) : activeView === 'evo' && historyKey ? (
+            <div className="mt-2.5">
+              <Evolution mode="desktop" data={data} historyKey={historyKey} placeLabel={props.title} />
+            </div>
+          ) : (
+            <div className="mt-2.5 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(20rem,25rem)] gap-4 xl:gap-5">
+              <div className="flex min-h-0 flex-col">
+                <Candidates {...props} expanded={expanded} onToggle={() => setExpanded((v) => !v)} />
+              </div>
+              <div className="border-l border-line pl-4 xl:pl-5">
+                <StatRows data={data} columns={2} />
+              </div>
+            </div>
+          )}
+        </>
       )}
     </section>
   );
@@ -153,8 +202,12 @@ function MobileSheet({
   const { data, crumbs, mapPanel, onPeekHeight } = props;
   const list = data?.candidates ?? [];
   const duel = list.length === 2;
-  const [tab, setTab] = useState<'cand' | 'part' | 'evo' | 'map'>(duel ? 'part' : 'cand');
-  const activeTab = duel && tab === 'cand' ? 'part' : !historyKey && tab === 'evo' ? 'part' : tab;
+  const [tab, setTab] = useState<'cand' | 'part' | 'evo' | 'map' | 'zones' | 'candidate'>(
+    props.candidatePanel ? 'candidate' : duel ? 'part' : 'cand',
+  );
+  const validTab =
+    (tab === 'zones' && !props.zonesPanel) || (tab === 'candidate' && !props.candidatePanel) ? 'cand' : !historyKey && tab === 'evo' ? 'part' : tab;
+  const activeTab = duel && validTab === 'cand' ? 'part' : validTab;
   const peekRef = useRef<HTMLDivElement>(null);
   const [peekH, setPeekH] = useState(260);
 
@@ -172,6 +225,8 @@ function MobileSheet({
   }, [onPeekHeight]);
 
   const tabs = [
+    ...(props.candidatePanel ? [{ value: 'candidate' as const, label: props.candidateLabel ?? 'Perfil' }] : []),
+    ...(props.zonesPanel ? [{ value: 'zones' as const, label: 'Zonas' }] : []),
     ...(duel ? [] : [{ value: 'cand' as const, label: 'Candidatos' }]),
     { value: 'part' as const, label: 'Participação' },
     ...(historyKey ? [{ value: 'evo' as const, label: 'Evolução' }] : []),
@@ -216,7 +271,14 @@ function MobileSheet({
           </div>
         )}
         <div className="mt-2.5">
-          {alt ?? (!data ? <RowsSkeleton /> : duel ? <Duel a={list[0]} b={list[1]} data={data} photoUf={props.photoUf} majority={props.majority} mobile /> : <Summary {...props} />)}
+          {alt ??
+            (!data ? (
+              <RowsSkeleton />
+            ) : duel ? (
+              <Duel a={list[0]} b={list[1]} data={data} photoUf={props.photoUf} majority={props.majority} mobile />
+            ) : (
+              <Summary {...props} />
+            ))}
         </div>
         {!alt && !expanded && (
           <button type="button" className="btn -mx-1 mt-1 h-11 w-[calc(100%+0.5rem)] justify-between px-1 text-caption text-ink-3" onClick={() => setExpanded(true)}>
@@ -241,7 +303,11 @@ function MobileSheet({
             />
           </div>
           <div className="scroll-y min-h-0 flex-1 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
-            {activeTab === 'cand' ? (
+            {activeTab === 'zones' ? (
+              props.zonesPanel
+            ) : activeTab === 'candidate' ? (
+              props.candidatePanel
+            ) : activeTab === 'cand' ? (
               <Candidates {...props} expanded onToggle={() => undefined} listOnly />
             ) : activeTab === 'part' ? (
               <StatRows data={data} />
@@ -510,7 +576,12 @@ function DuelBar({ a, b, majority, mobile }: { a: CandidateRow; b: CandidateRow;
   const started = a.percent + b.percent > 0;
   useLayoutEffect(() => {
     ref.current?.querySelectorAll<HTMLElement>('[data-seg]').forEach((n) =>
-      gsap.to(n, { width: `${n.dataset.seg}%`, duration: dur(1.1), ease: 'power3.out', overwrite: true }),
+      gsap.to(n, {
+        width: `${n.dataset.seg}%`,
+        duration: dur(1.1),
+        ease: 'power3.out',
+        overwrite: true,
+      }),
     );
   }, [a.percent, b.percent]);
   return (
@@ -533,7 +604,9 @@ function DuelBar({ a, b, majority, mobile }: { a: CandidateRow; b: CandidateRow;
         {majority && <span className="absolute -inset-y-1 left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-ink" aria-hidden />}
       </div>
       <div className="mt-1.5 flex items-start justify-between gap-3 font-mono text-nano text-ink-3">
-        <span className="min-w-0 truncate">{!started && (mobile ? 'Votos a partir das 17h (Brasília)' : 'Os votos aparecem depois das 17h (Brasília)')}</span>
+        <span className="min-w-0 truncate">
+          {!started && (mobile ? 'Votos a partir das 17h (Brasília)' : 'Os votos aparecem depois das 17h (Brasília)')}
+        </span>
         {majority && <span className="shrink-0 text-ink-2">50% dos válidos</span>}
       </div>
     </div>
@@ -550,7 +623,12 @@ function StackBar({ candidates, majority }: { candidates: CandidateRow[]; majori
   const sig = top.map((c) => c.percent).join('|') + rest;
   useLayoutEffect(() => {
     ref.current?.querySelectorAll<HTMLElement>('[data-seg]').forEach((n) =>
-      gsap.to(n, { width: `${n.dataset.seg}%`, duration: dur(1.1), ease: 'power3.out', overwrite: true }),
+      gsap.to(n, {
+        width: `${n.dataset.seg}%`,
+        duration: dur(1.1),
+        ease: 'power3.out',
+        overwrite: true,
+      }),
     );
   }, [sig]);
   return (
@@ -601,7 +679,9 @@ function Row({
         <span className="truncate text-small font-medium text-ink">{titleCase(c.shortName)}</span>
         <span className="hidden shrink-0 font-mono text-nano text-ink-3 sm:inline">{c.party}</span>
         {status && (
-          <span className={clsx('pill hidden shrink-0 sm:inline-flex', /^eleit/i.test(status) ? 'pill-live' : 'pill-waiting')}>{status}</span>
+          <span className={clsx('pill hidden shrink-0 sm:inline-flex', /^eleit/i.test(status) ? 'pill-live' : 'pill-waiting')}>
+            {status}
+          </span>
         )}
       </span>
       <span className="track h-1" aria-hidden>
@@ -648,12 +728,38 @@ function StatRows({ data, columns = 1 }: { data: ParsedResult | null; columns?: 
     kind: 'pct' | 'int';
     bar?: number;
   }> = [
-    { icon: 'ballot', label: 'Urnas apuradas', value: t ? t.sectionsPct : null, kind: 'pct', bar: t?.sectionsPct ?? 0 },
-    { icon: 'users', label: 'Comparecimento', value: after(t?.turnoutPct), kind: 'pct' },
-    { icon: 'user-minus', label: 'Abstenção', value: after(t?.abstentionPct), kind: 'pct' },
-    { icon: 'square', label: 'Brancos', value: after(t?.blankPct), kind: 'pct' },
+    {
+      icon: 'ballot',
+      label: 'Urnas apuradas',
+      value: t ? t.sectionsPct : null,
+      kind: 'pct',
+      bar: t?.sectionsPct ?? 0,
+    },
+    {
+      icon: 'users',
+      label: 'Comparecimento',
+      value: after(t?.turnoutPct),
+      kind: 'pct',
+    },
+    {
+      icon: 'user-minus',
+      label: 'Abstenção',
+      value: after(t?.abstentionPct),
+      kind: 'pct',
+    },
+    {
+      icon: 'square',
+      label: 'Brancos',
+      value: after(t?.blankPct),
+      kind: 'pct',
+    },
     { icon: 'x-square', label: 'Nulos', value: after(t?.nullPct), kind: 'pct' },
-    { icon: 'id', label: 'Eleitorado', value: t ? t.electorate : null, kind: 'int' },
+    {
+      icon: 'id',
+      label: 'Eleitorado',
+      value: t ? t.electorate : null,
+      kind: 'int',
+    },
   ];
   return (
     <dl className={clsx(columns === 2 ? 'grid grid-flow-col grid-cols-2 grid-rows-3 gap-x-5' : 'flex flex-col')}>
@@ -672,7 +778,10 @@ function StatRows({ data, columns = 1 }: { data: ParsedResult | null; columns?: 
           </dt>
           {it.bar !== undefined && (
             <span className="absolute inset-x-0 -bottom-px h-[2px] overflow-hidden" aria-hidden>
-              <span className="block h-full bg-ink/80 transition-[width] duration-700 ease-out" style={{ width: `${Math.min(100, it.bar)}%` }} />
+              <span
+                className="block h-full bg-ink/80 transition-[width] duration-700 ease-out"
+                style={{ width: `${Math.min(100, it.bar)}%` }}
+              />
             </span>
           )}
           <dd className="text-right text-small font-medium text-ink">
