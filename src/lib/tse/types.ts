@@ -101,6 +101,8 @@ export interface TseResultFile {
     pvb: string;
     vn: string;
     pvn: string;
+    ptvn?: string;
+    ptvnn?: string;
   };
 }
 

@@ -1,308 +1,426 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import gsap from 'gsap';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrazilMap } from './components/BrazilMap';
-import { CandidateCard } from './components/CandidateCard';
-import { DonutChart } from './components/DonutChart';
-import { LoadingScreen } from './components/LoadingScreen';
-import { MunicipalitySearch } from './components/MunicipalitySearch';
-import { OfficeTabs } from './components/OfficeTabs';
-import { StatsGrid } from './components/StatsGrid';
+import { DetailBody, DetailHeader } from './components/DetailPanel';
+import { Hero } from './components/Hero';
+import { MapLegend, type LegendItem } from './components/MapLegend';
 import { TextScramble } from './components/TextScramble';
-import { ThemeToggle } from './components/ThemeToggle';
-import { GOV_RUNOFF_UFS, UF_LIST } from './lib/tse/config';
-import { buildResultPath } from './lib/tse/client';
+import { TopBar } from './components/TopBar';
+import { TopProgress } from './components/TopProgress';
+import { Button } from './components/ui/Button';
+import { Icon } from './components/ui/Icon';
+import { Panel } from './components/ui/Panel';
+import { Tabs } from './components/ui/Tabs';
 import { useElectionResult } from './hooks/useElectionResult';
 import { municipalitiesForUf, useMunicipalityIndex } from './hooks/useMunicipalityIndex';
 import { useMunicipalityResults } from './hooks/useMunicipalityResults';
 import { useStateLeaders } from './hooks/useStateLeaders';
-import type { MunicipalityRef, OfficeId, Round } from './lib/tse/types';
+import { GOV_RUNOFF_UFS, OFFICES, ROUND_OPTIONS, UF_LIST } from './lib/tse/config';
+import { buildResultPath } from './lib/tse/client';
+import type { MunicipalityRef, OfficeId, ParsedResult, Round } from './lib/tse/types';
+import { titleCase } from './lib/ui/format';
+import { prefersReducedMotion } from './lib/ui/motion';
+import { useMediaQuery } from './lib/ui/useMediaQuery';
 
-type ViewLevel = 'country' | 'state' | 'municipality';
+type Scope = 'br' | 'uf' | 'mu';
 
-function formatBrasilia(isoLike: string): string {
-  if (!isoLike) return '—';
-  const [d, t] = isoLike.split(' ');
-  if (!d || !t) return isoLike;
-  const [dd, mm, yyyy] = d.split('/');
-  const dt = new Date(`${yyyy}-${mm}-${dd}T${t}-03:00`);
-  return dt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+interface MunSel {
+  tse: string;
+  ibge?: string;
+  name: string;
+  uf: string;
 }
+
+/** Descarta resultado de um recorte anterior enquanto o novo ainda carrega. */
+function fresh(data: ParsedResult | null, round: Round, officeId: OfficeId, scope: Scope, code: string) {
+  if (!data || !code) return null;
+  if (data.round !== round || data.officeId !== officeId || data.scope !== scope) return null;
+  return code.toLowerCase().endsWith(data.scopeCode.toLowerCase()) ? data : null;
+}
+
+const PANEL_INSET = 424;
 
 export default function App() {
   const [round, setRound] = useState<Round>(2);
   const [officeId, setOfficeId] = useState<OfficeId>('1');
-  const [level, setLevel] = useState<ViewLevel>('country');
   const [ufSlug, setUfSlug] = useState<string | null>(null);
-  const [mun, setMun] = useState<{ tse: string; name: string; uf: string } | null>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const headerRef = useRef<HTMLElement>(null);
+  const [mun, setMun] = useState<MunSel | null>(null);
+  const desktop = useMediaQuery('(min-width: 1024px)');
+  const mapCardRef = useRef<HTMLDivElement>(null);
 
+  const office = OFFICES.find((o) => o.id === officeId)!;
   const ufMeta = UF_LIST.find((u) => u.slug === ufSlug);
-  const scope: 'br' | 'uf' | 'mu' =
-    level === 'municipality' && mun && ufSlug
-      ? 'mu'
-      : level === 'state' && ufSlug
-        ? 'uf'
-        : 'br';
+  const hasNational = officeId === '1';
+  const runoffGov = officeId === '3' && round === 2;
 
-  const scopeCode =
-    scope === 'mu' && mun && ufSlug
-      ? `${ufSlug}${mun.tse}`
-      : scope === 'uf' && ufSlug
-        ? ufSlug
-        : 'br';
+  /* ---- dados ---- */
+  const nationalQ = useElectionResult(round, officeId, 'br', 'br', 'Brasil', hasNational);
+  const stateQ = useElectionResult(round, officeId, 'uf', ufSlug ?? '', ufMeta?.name ?? '', !!ufSlug);
+  const munCode = mun && ufSlug ? `${ufSlug}${mun.tse}` : '';
+  const munQ = useElectionResult(round, officeId, 'mu', munCode, mun ? `${mun.name} — ${mun.uf}` : '', !!munCode);
 
-  const scopeLabel =
-    scope === 'mu' && mun
-      ? `${mun.name} — ${mun.uf}`
-      : scope === 'uf' && ufMeta
-        ? ufMeta.name
-        : 'Brasil';
+  const national = hasNational ? fresh(nationalQ.data, round, officeId, 'br', 'br') : null;
+  const stateData = fresh(stateQ.data, round, officeId, 'uf', ufSlug ?? '');
+  const munData = fresh(munQ.data, round, officeId, 'mu', munCode);
 
-  const summaryEnabled =
-    officeId === '1' ||
-    (officeId === '3' && scope !== 'br') ||
-    (officeId !== '3' && round === 1);
-
-  const { data, error, loading } = useElectionResult(
-    round,
-    officeId,
-    scope,
-    scopeCode,
-    scopeLabel,
-    summaryEnabled,
-  );
-
-  const { map: stateLeaders } = useStateLeaders(round, officeId, true);
+  const { map: stateLeaders, loading: statesLoading } = useStateLeaders(round, officeId, true);
   const { items: munIndex } = useMunicipalityIndex(round);
-  const munInUf = useMemo(
-    () => (ufSlug ? municipalitiesForUf(munIndex, ufSlug) : []),
-    [munIndex, ufSlug],
-  );
+  const munInUf = useMemo(() => (ufSlug ? municipalitiesForUf(munIndex, ufSlug) : []), [munIndex, ufSlug]);
   const { leaders: munLeaders, progress: munProgress } = useMunicipalityResults(
     round,
     officeId,
     ufSlug ?? '',
     munInUf,
-    level === 'state' && !!ufSlug,
+    !!ufSlug,
   );
 
-  const pathMeta = buildResultPath(round, officeId, scope, scopeCode);
-  const photoUf = pathMeta?.photoUf ?? 'br';
+  /* ---- navegação ---- */
+  const scrollToMap = useCallback(() => {
+    if (desktop) return;
+    const el = mapCardRef.current;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top + window.scrollY - 76;
+    window.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+  }, [desktop]);
 
-  const initialLoad = loading && !data;
-
-  useEffect(() => {
-    if (!headerRef.current) return;
-    gsap.fromTo(
-      headerRef.current,
-      { y: -8, opacity: 0 },
-      { y: 0, opacity: 1, duration: 0.6, ease: 'power2.out', delay: 0.15 },
-    );
-  }, []);
-
-  useEffect(() => {
-    if (!panelRef.current) return;
-    gsap.fromTo(
-      panelRef.current,
-      { y: 12, opacity: 0 },
-      { y: 0, opacity: 1, duration: 0.45, ease: 'power2.out' },
-    );
-  }, [level, scopeCode, officeId]);
-
-  const goCountry = () => {
-    setLevel('country');
+  const goCountry = useCallback(() => {
     setUfSlug(null);
     setMun(null);
+  }, []);
+
+  const goState = useCallback(
+    (slug: string) => {
+      if (officeId === '3' && round === 2 && !GOV_RUNOFF_UFS.has(slug)) return;
+      setUfSlug(slug);
+      setMun(null);
+      scrollToMap();
+    },
+    [officeId, round, scrollToMap],
+  );
+
+  const goStateFromHero = useCallback(
+    (slug: string) => {
+      goState(slug);
+      const el = mapCardRef.current;
+      if (desktop && el) {
+        const top = el.getBoundingClientRect().top + window.scrollY - 88;
+        window.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+      }
+    },
+    [goState, desktop],
+  );
+
+  const goMunicipality = useCallback(
+    (tseCode: string, name: string) => {
+      if (!ufSlug) return;
+      const ibge = Object.values(munLeaders).find((m) => m.tseCode === tseCode)?.ibgeCode;
+      setMun({ tse: tseCode, ibge, name: titleCase(name), uf: ufMeta?.sigla ?? ufSlug.toUpperCase() });
+    },
+    [ufSlug, ufMeta, munLeaders],
+  );
+
+  const onSearchPick = useCallback(
+    (m: MunicipalityRef) => {
+      const slug = m.uf.toLowerCase();
+      if (officeId === '3' && round === 2 && !GOV_RUNOFF_UFS.has(slug)) setOfficeId('1');
+      setUfSlug(slug);
+      setMun({ tse: m.tseCode, ibge: m.ibgeCode, name: titleCase(m.name), uf: m.uf });
+      const el = mapCardRef.current;
+      if (el) {
+        const top = el.getBoundingClientRect().top + window.scrollY - (desktop ? 88 : 76);
+        window.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+      }
+    },
+    [officeId, round, desktop],
+  );
+
+  const changeRound = (r: Round) => {
+    setRound(r);
+    if (r === 2 && officeId !== '1' && officeId !== '3') setOfficeId('1');
+    const nextOffice = r === 2 && officeId !== '1' && officeId !== '3' ? '1' : officeId;
+    if (nextOffice === '3' && r === 2 && ufSlug && !GOV_RUNOFF_UFS.has(ufSlug)) goCountry();
   };
 
-  const goState = (slug: string) => {
-    if (officeId === '3' && round === 2 && !GOV_RUNOFF_UFS.has(slug)) return;
-    setUfSlug(slug);
-    setLevel('state');
-    setMun(null);
+  const changeOffice = (id: OfficeId) => {
+    setOfficeId(id);
+    if (id === '3' && round === 2 && ufSlug && !GOV_RUNOFF_UFS.has(ufSlug)) goCountry();
   };
 
-  const goMunicipality = (tseCode: string, name: string) => {
-    if (!ufSlug) return;
-    setMun({ tse: tseCode, name, uf: ufMeta?.sigla ?? ufSlug.toUpperCase() });
-    setLevel('municipality');
-  };
+  const closePanel = useCallback(() => {
+    if (mun) setMun(null);
+    else goCountry();
+  }, [mun, goCountry]);
 
-  const onSearchPick = (m: MunicipalityRef) => {
-    setUfSlug(m.uf.toLowerCase());
-    setMun({ tse: m.tseCode, name: m.name, uf: m.uf });
-    setLevel('municipality');
-  };
+  /* ---- derivados para o mapa ---- */
+  const candidateNames = useMemo(() => {
+    const out: Record<string, { name: string; color: string }> = {};
+    for (const c of [...(national?.candidates ?? []), ...(stateData?.candidates ?? [])]) {
+      out[c.sqcand] = { name: c.shortName, color: c.color };
+    }
+    return out;
+  }, [national, stateData]);
 
-  const maxVotes = data?.candidates[0]?.votes ?? 1;
+  const legend = useMemo<{ items: LegendItem[]; unit: string }>(() => {
+    const counts = new Map<string, LegendItem>();
+    const base = (ufSlug ? stateData?.candidates : national?.candidates) ?? [];
+    for (const c of base.slice(0, 2)) {
+      counts.set(c.shortName, { key: c.sqcand, name: c.shortName, color: c.color, count: 0 });
+    }
+    if (ufSlug) {
+      for (const m of Object.values(munLeaders)) {
+        if (!m.hasLeader || !m.leaderId) continue;
+        const name = candidateNames[m.leaderId]?.name ?? m.leaderId;
+        const it = counts.get(name) ?? { key: m.leaderId, name, color: m.leaderColor, count: 0 };
+        it.count += 1;
+        counts.set(name, it);
+      }
+    } else {
+      for (const s of Object.values(stateLeaders)) {
+        if (!s.hasLeader || !s.leaderName) continue;
+        const it = counts.get(s.leaderName) ?? { key: s.slug, name: s.leaderName, color: s.leaderColor, count: 0 };
+        it.count += 1;
+        counts.set(s.leaderName, it);
+      }
+    }
+    const items = [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 4);
+    return { items, unit: ufSlug ? 'mun.' : items.some((i) => i.count === 1) ? 'UF' : 'UFs' };
+  }, [ufSlug, stateData, national, munLeaders, stateLeaders, candidateNames]);
+
+  const runoffDisabled = useMemo(
+    () => (runoffGov ? new Set(UF_LIST.map((u) => u.slug).filter((s) => !GOV_RUNOFF_UFS.has(s))) : undefined),
+    [runoffGov],
+  );
+
+  const awaiting = (national ?? stateData)?.turnout.apurationStarted === false;
+
+  const loadingAny =
+    (hasNational && nationalQ.loading && !national) ||
+    statesLoading ||
+    (!!ufSlug && munInUf.length > 0 && munProgress < 100);
+
+  /* ---- painel ---- */
+  const panelOpen = !!ufSlug;
+  const detailData = mun ? munData : stateData;
+  const detailQ = mun ? munQ : stateQ;
+  const photoUf = officeId === '1' ? 'br' : buildResultPath(round, officeId, mun ? 'mu' : 'uf', mun ? munCode : (ufSlug ?? 'br'))?.photoUf ?? 'br';
+  const contextLabel = `${office.label} · ${round}º turno`;
+  const panelHeader = (
+    <DetailHeader
+      context={contextLabel}
+      title={mun ? mun.name : (ufMeta?.name ?? '')}
+      data={detailData}
+      back={mun && ufMeta ? { label: ufMeta.name, onClick: () => setMun(null) } : undefined}
+    />
+  );
+  const panelBody = (
+    <DetailBody
+      key={`${officeId}-${round}`}
+      data={detailData}
+      loading={detailQ.loading}
+      error={detailQ.error}
+      photoUf={photoUf}
+      majority={officeId === '1' || officeId === '3'}
+    />
+  );
+
+  useEffect(() => {
+    document.title = mun
+      ? `${mun.name} (${mun.uf}) · Apuração 2026`
+      : ufMeta
+        ? `${ufMeta.name} · Apuração 2026`
+        : 'Apuração 2026 · Eleições gerais';
+  }, [mun, ufMeta]);
+
+  const roundItems = ROUND_OPTIONS.map((r) => ({ value: r.round, label: r.label }));
+  const officeItems = OFFICES.filter((o) => round === 1 || o.id === '1' || o.id === '3').map((o) => ({
+    value: o.id,
+    label: o.label,
+  }));
+
+  const mapTitle = mun
+    ? `${mun.name}, ${mun.uf}`
+    : ufMeta
+      ? `Municípios de ${ufMeta.name}`
+      : 'Quem lidera em cada estado';
 
   return (
-    <div className="app-shell min-h-screen">
-      <LoadingScreen visible={initialLoad} />
-      <header
-        ref={headerRef}
-        className="border-b border-[var(--color-border)] bg-[var(--color-surface-elevated)]/85 backdrop-blur-md"
-      >
-        <div className="mx-auto flex max-w-6xl flex-col gap-5 px-[var(--spacing-page-x)] py-6 sm:flex-row sm:items-end sm:justify-between sm:px-8">
-          <div className="space-y-2">
-            <div className="label-mono label-accent flex items-center gap-2">
-              <span className="live-dot" aria-hidden />
-              Apuração oficial · TSE
+    <div className="min-h-dvh">
+      <TopProgress active={loadingAny} />
+      <TopBar munIndex={munIndex} onPick={onSearchPick} onHome={goCountry} />
+
+      <main className="frame">
+        {/* ------------------------------------------------ 01 · resultado */}
+        <section className="relative overflow-hidden px-page pb-section pt-10 sm:pt-14" aria-labelledby="resultado">
+          <div className="hero-glow" aria-hidden />
+          <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <SectionLabel n={1} text={hasNational ? `${office.label} · Brasil` : office.label} id="resultado" />
+            <div className="flex flex-wrap items-center gap-2">
+              <Tabs<Round> label="Turno" value={round} onChange={changeRound} items={roundItems} />
+              <div className="-mx-page max-w-[100vw] px-page scroll-x sm:mx-0 sm:px-0">
+                <Tabs<OfficeId> label="Cargo" value={officeId} onChange={changeOffice} items={officeItems} />
+              </div>
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-ink)] sm:text-[1.75rem]">
-              <TextScramble text="Eleições 2026" playOnMount={!initialLoad} />
-            </h1>
-            <p className="max-w-md text-sm text-[var(--color-muted)]">
-              Mapa interativo e números em tempo real, direto do CDN do tribunal.
+          </div>
+          <div className="relative mt-10 sm:mt-14">
+            <Hero
+              round={round}
+              officeId={officeId}
+              officeLabel={office.label}
+              national={hasNational ? { data: national, loading: nationalQ.loading, error: nationalQ.error } : null}
+              stateLeaders={stateLeaders}
+              onPickState={goStateFromHero}
+            />
+          </div>
+        </section>
+
+        <div className="rule" />
+
+        {/* ------------------------------------------------ 02 · mapa */}
+        <section className="px-page py-section" aria-labelledby="mapa">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <SectionLabel n={2} text={ufMeta ? `Mapa · ${ufMeta.sigla}` : 'Mapa · Brasil'} id="mapa" />
+              <h2 className="mt-4 text-title font-medium text-ink sm:text-headline">{mapTitle}</h2>
+            </div>
+            <p className="max-w-sm text-small text-ink-3 sm:text-right">
+              {ufSlug
+                ? 'Toque em um município para ver o resultado dele.'
+                : runoffGov
+                  ? 'Só os estados em destaque têm 2º turno para governador.'
+                  : 'A cor mostra quem está à frente. Toque em um estado para abrir os municípios.'}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <MunicipalitySearch items={munIndex} onPick={onSearchPick} />
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
 
-      <main className="mx-auto max-w-6xl px-[var(--spacing-page-x)] py-8 sm:px-8">
-        <OfficeTabs
-          round={round}
-          officeId={officeId}
-          onRound={setRound}
-          onOffice={(id) => {
-            setOfficeId(id);
-            if (id === '3' && round === 2 && ufSlug && !GOV_RUNOFF_UFS.has(ufSlug)) {
-              goCountry();
-            }
-          }}
-        />
-
-        <nav
-          className="mt-6 flex flex-wrap items-center gap-1.5 font-mono text-xs text-[var(--color-muted)]"
-          aria-label="Navegação"
-        >
-          <button type="button" onClick={goCountry} className="transition hover:text-[var(--color-accent)]">
-            brasil
-          </button>
-          {ufSlug && (
-            <>
-              <span className="opacity-40">/</span>
-              <button
-                type="button"
-                onClick={() => goState(ufSlug)}
-                className="transition hover:text-[var(--color-accent)]"
-              >
-                {ufMeta?.sigla.toLowerCase() ?? ufSlug}
-              </button>
-            </>
-          )}
-          {mun && (
-            <>
-              <span className="opacity-40">/</span>
-              <span className="text-[var(--color-ink)]">{mun.name.toLowerCase()}</span>
-            </>
-          )}
-        </nav>
-
-        {officeId === '3' && scope === 'br' && round === 2 && (
-          <div className="mt-6 panel-muted border-[var(--color-accent)]/25 px-4 py-3 text-sm text-[var(--color-ink-secondary)]">
-            Governador não tem resultado nacional no 2º turno. Selecione um estado com segundo turno no mapa ou use a busca.
-          </div>
-        )}
-
-        {error && (
-          <div className="mt-6 rounded-xl border border-red-500/35 bg-red-500/8 px-4 py-3 text-sm text-red-800 dark:text-red-300">
-            {error}
-          </div>
-        )}
-
-        <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1.12fr)_minmax(0,0.88fr)] lg:gap-8">
-          <section className="flex min-h-0 flex-col gap-3 lg:sticky lg:top-6">
+          <div
+            ref={mapCardRef}
+            className="card dot-grid relative mt-8 aspect-square overflow-hidden sm:aspect-[4/3] lg:aspect-auto lg:h-[min(80vh,760px)] lg:min-h-[580px]"
+          >
             <BrazilMap
-              level={level === 'country' ? 'country' : 'state'}
               ufSlug={ufSlug ?? undefined}
+              selectedIbge={mun?.ibge}
               stateLeaders={stateLeaders}
-              munLeaders={level !== 'country' ? munLeaders : undefined}
-              munProgress={munProgress}
+              munLeaders={ufSlug ? munLeaders : undefined}
+              candidateNames={candidateNames}
+              insetRight={desktop && panelOpen ? PANEL_INSET : 0}
+              insetTop={desktop ? 64 : 52}
+              awaiting={awaiting}
+              disabledStates={runoffDisabled}
               onSelectState={goState}
               onSelectMunicipality={goMunicipality}
             />
-            <p className="label-mono px-1 normal-case tracking-normal text-[var(--color-muted)]">
-              Cores = líder · intensidade = margem · fonte resultados.tse.jus.br
-            </p>
-          </section>
 
-          <aside ref={panelRef} className="min-h-0 w-full">
-            <div className="panel p-5 sm:p-6">
-              <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border-subtle)] pb-4">
-                <div className="min-w-0">
-                  <p className="label-mono">recorte</p>
-                  <h2 className="mt-1 truncate text-xl font-semibold tracking-tight">{scopeLabel}</h2>
-                  <p className="mt-1 font-mono text-[11px] text-[var(--color-muted)]">
-                    atualizado{' '}
-                    {data ? formatBrasilia(data.updatedAt) : loading ? '…' : '—'} · Brasília
-                  </p>
-                  {data?.finished && (
-                    <span className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
-                      totalização final
-                    </span>
-                  )}
-                </div>
-                {data && data.candidates.length > 0 && (
-                  <DonutChart candidates={data.candidates} />
+            {/* barra do mapa */}
+            <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-start gap-2">
+              <div className="pointer-events-auto flex h-9 items-center gap-0.5 rounded-pill bg-(--glass) px-1 shadow-sm backdrop-blur-md">
+                {ufSlug && (
+                  <Button variant="ghost" size="sm" icon onClick={goCountry} aria-label="Voltar para o Brasil">
+                    <Icon name="arrow-left" size={14} />
+                  </Button>
+                )}
+                <Crumb onClick={goCountry} current={!ufSlug}>
+                  Brasil
+                </Crumb>
+                {ufMeta && (
+                  <>
+                    <Icon name="chevron-right" size={12} className="text-ink-4" />
+                    <Crumb onClick={() => setMun(null)} current={!mun}>
+                      {desktop ? ufMeta.name : ufMeta.sigla}
+                    </Crumb>
+                  </>
+                )}
+                {mun && (
+                  <>
+                    <Icon name="chevron-right" size={12} className="text-ink-4" />
+                    <Crumb current>{mun.name}</Crumb>
+                  </>
                 )}
               </div>
-
-              {!summaryEnabled && (
-                <p className="mt-5 text-sm text-[var(--color-muted)]">
-                  Selecione um estado no mapa para abrir o painel deste cargo.
-                </p>
-              )}
-
-              {summaryEnabled && loading && !data && (
-                <div className="mt-5 space-y-2">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-[72px] skeleton" />
-                  ))}
+              {ufSlug && munInUf.length > 0 && munProgress < 100 && (
+                <div className="flex h-9 items-center gap-2 rounded-pill bg-(--glass) px-3 shadow-sm backdrop-blur-md">
+                  <span className="track h-1 w-14">
+                    <span
+                      className="block h-full bg-ink transition-[width] duration-300"
+                      style={{ width: `${munProgress}%` }}
+                    />
+                  </span>
+                  <span className="tnum font-mono text-micro text-ink-3">{munProgress}%</span>
                 </div>
               )}
-
-              {data && (
-                <>
-                  <p className="label-mono mt-5">candidatos · clique para detalhes</p>
-                  <div className="mt-3 space-y-2">
-                    {data.candidates.map((c, i) => (
-                      <CandidateCard
-                        key={c.sqcand}
-                        candidate={c}
-                        electionId={data.electionId}
-                        photoUf={photoUf}
-                        maxVotes={maxVotes}
-                        index={i}
-                        defaultOpen={i === 0}
-                      />
-                    ))}
-                  </div>
-                  {data.candidates.every((c) => c.votes === 0) && (
-                    <p className="mt-4 text-sm text-[var(--color-muted)]">
-                      Apuração ainda não iniciada neste recorte. Os números aparecem conforme o TSE publica.
-                    </p>
-                  )}
-                  <div className="mt-6 border-t border-[var(--color-border-subtle)] pt-5">
-                    <StatsGrid turnout={data.turnout} />
-                  </div>
-                </>
-              )}
             </div>
-          </aside>
-        </div>
+
+            {desktop && (
+              <div className="tooltip pointer-events-auto absolute bottom-3 left-3 z-10 max-w-[calc(100%-450px)] px-4 py-3">
+                <MapLegend items={legend.items} unit={legend.unit} />
+              </div>
+            )}
+
+            {desktop && (
+              <Panel
+                open={panelOpen}
+                mode="side"
+                onClose={closePanel}
+                header={panelHeader}
+                contentKey={mun?.tse ?? ufSlug ?? ''}
+                label="Detalhes do recorte"
+              >
+                {panelBody}
+              </Panel>
+            )}
+          </div>
+
+          {!desktop && <MapLegend items={legend.items} unit={legend.unit} className="mt-5" />}
+        </section>
+
+        <div className="rule" />
+
+        <footer className="flex flex-col gap-3 px-page py-10 text-caption text-ink-3 sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            Fonte: <span className="font-mono text-ink-2">resultados.tse.jus.br</span>. Atualiza sozinho a cada minuto.
+          </p>
+          <p>Projeto independente, sem ligação com o TSE.</p>
+        </footer>
       </main>
 
-      <footer className="mx-auto max-w-6xl px-[var(--spacing-page-x)] pb-12 pt-6 text-center sm:px-8">
-        <p className="font-mono text-[11px] text-[var(--color-muted)]">
-          Dados públicos do TSE · projeto independente, sem vínculo institucional
-        </p>
-      </footer>
+      {!desktop && panelOpen && <div className="h-[46dvh]" aria-hidden />}
+      {!desktop && (
+        <Panel
+          open={panelOpen}
+          mode="sheet"
+          onClose={closePanel}
+          header={panelHeader}
+          contentKey={mun?.tse ?? ufSlug ?? ''}
+          label="Detalhes do recorte"
+        >
+          {panelBody}
+        </Panel>
+      )}
     </div>
+  );
+}
+
+function SectionLabel({ n, text, id }: { n: number; text: string; id?: string }) {
+  return (
+    <p id={id} className="eyebrow flex items-center gap-2">
+      <span className="text-ink-4">[</span>
+      <span className="text-ink">{String(n).padStart(2, '0')}</span>
+      <span className="text-ink-4">]</span>
+      <TextScramble text={text} />
+    </p>
+  );
+}
+
+function Crumb({ children, onClick, current }: { children: string; onClick?: () => void; current?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      aria-current={current ? 'page' : undefined}
+      className={
+        'max-w-40 truncate rounded-pill px-2.5 py-1 text-caption font-medium transition-colors ' +
+        (current ? 'text-ink' : 'text-ink-3 hover:bg-hover hover:text-ink')
+      }
+    >
+      {children}
+    </button>
   );
 }

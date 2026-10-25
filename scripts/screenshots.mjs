@@ -12,14 +12,16 @@ const browser = await chromium.launch();
 const page = await browser.newPage();
 
 async function clickUf(sigla) {
-  const box = await page.locator('svg').boundingBox();
-  if (!box) return;
-  const coords = {
-    sp: { x: box.x + box.width * 0.55, y: box.y + box.height * 0.72 },
-    mg: { x: box.x + box.width * 0.62, y: box.y + box.height * 0.58 },
-  };
-  const c = coords[sigla] ?? coords.sp;
-  await page.mouse.click(c.x, c.y);
+  const region = page.locator(`path.map-region[data-uf="${sigla}"]`);
+  await region.scrollIntoViewIfNeeded();
+  await region.click();
+}
+
+async function clickMunicipality() {
+  await page.waitForSelector('path.map-region[data-kind="mun"]', { timeout: 30000 });
+  const muns = page.locator('path.map-region[data-kind="mun"]');
+  const n = await muns.count();
+  await muns.nth(Math.floor(n / 2)).click({ force: true });
 }
 
 await page.setViewportSize({ width: 1280, height: 800 });
@@ -32,12 +34,13 @@ await clickUf('sp');
 await page.waitForTimeout(4000);
 await page.screenshot({ path: `${out}/desktop-state.png`, fullPage: true });
 
-await page.mouse.click(640, 360);
+await clickMunicipality();
 await page.waitForTimeout(2000);
 await page.screenshot({ path: `${out}/desktop-municipality.png`, fullPage: true });
 
 await page.setViewportSize({ width: 390, height: 844 });
 await page.goto(base, { waitUntil: 'networkidle' });
+await page.waitForSelector('path.map-region', { timeout: 30000 });
 await page.waitForTimeout(2000);
 await page.screenshot({ path: `${out}/mobile-main.png`, fullPage: true });
 await clickUf('sp');

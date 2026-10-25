@@ -1,34 +1,49 @@
 import { useEffect, useRef } from 'react';
 import gsap from 'gsap';
+import { dur } from '../lib/ui/motion';
 
 interface Props {
   value: number;
   format?: (n: number) => string;
   className?: string;
+  /** valor inicial da contagem na primeira renderização */
+  from?: number;
+  duration?: number;
 }
 
-export function AnimatedNumber({ value, format, className }: Props) {
+/** Número que conta suavemente até o novo valor quando os dados mudam. */
+export function AnimatedNumber({ value, format, className, from, duration = 0.9 }: Props) {
   const ref = useRef<HTMLSpanElement>(null);
-  const current = useRef(value);
+  const current = useRef(from ?? value);
+  const fmt = format ?? ((n: number) => String(Math.round(n)));
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const obj = { val: current.current };
-    gsap.to(obj, {
-      val: value,
-      duration: 0.8,
-      ease: 'power2.out',
+    const obj = { v: current.current };
+    const tween = gsap.to(obj, {
+      v: value,
+      duration: dur(duration),
+      ease: 'power3.out',
       onUpdate: () => {
-        current.current = obj.val;
-        el.textContent = format ? format(obj.val) : String(Math.round(obj.val));
+        current.current = obj.v;
+        el.textContent = fmt(obj.v);
+      },
+      onComplete: () => {
+        current.current = value;
+        el.textContent = fmt(value);
       },
     });
-  }, [value, format]);
+    return () => {
+      tween.kill();
+    };
+    // fmt é estável o bastante; mudar só o formato não deve reiniciar a contagem
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, duration]);
 
   return (
     <span ref={ref} className={className}>
-      {format ? format(value) : String(value)}
+      {fmt(current.current)}
     </span>
   );
 }

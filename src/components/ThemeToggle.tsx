@@ -1,30 +1,28 @@
 import { useEffect, useState } from 'react';
+import { Button } from './ui/Button';
+import { Icon } from './ui/Icon';
 
 export function ThemeToggle() {
-  const [dark, setDark] = useState(() =>
-    typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : true,
-  );
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
+    const root = document.documentElement;
+    root.classList.add('theme-switching');
+    root.classList.toggle('dark', dark);
     localStorage.setItem('theme', dark ? 'dark' : 'light');
+    const id = window.setTimeout(() => root.classList.remove('theme-switching'), 50);
+    return () => window.clearTimeout(id);
   }, [dark]);
 
-  useEffect(() => {
-    const stored = localStorage.getItem('theme');
-    if (stored === 'light') setDark(false);
-    else if (stored === 'dark') setDark(true);
-    else setDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
-  }, []);
-
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      icon
       onClick={() => setDark((d) => !d)}
-      className="btn-ghost"
-      aria-label="Alternar tema claro e escuro"
+      aria-label={dark ? 'Usar tema claro' : 'Usar tema escuro'}
+      title={dark ? 'Tema claro' : 'Tema escuro'}
     >
-      {dark ? 'Tema claro' : 'Tema escuro'}
-    </button>
+      <Icon name={dark ? 'sun' : 'moon'} size={17} />
+    </Button>
   );
 }

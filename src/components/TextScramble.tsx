@@ -1,60 +1,64 @@
-import { useEffect, useRef, useState } from 'react';
-import gsap from 'gsap';
+import { useEffect, useRef } from 'react';
+import { prefersReducedMotion } from '../lib/ui/motion';
 
-const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789./_';
+const GLYPHS = '░▒▓/\\|_-+=<>01';
 
 interface Props {
   text: string;
   className?: string;
-  /** Run scramble once on mount */
-  playOnMount?: boolean;
 }
 
-export function TextScramble({ text, className, playOnMount = true }: Props) {
+/**
+ * Embaralha os caracteres por um instante sempre que o texto muda.
+ * Usado com parcimônia: só em rótulos mono pequenos.
+ */
+export function TextScramble({ text, className }: Props) {
   const ref = useRef<HTMLSpanElement>(null);
-  const [display, setDisplay] = useState(playOnMount ? '' : text);
-  const done = useRef(!playOnMount);
+  const first = useRef(true);
 
   useEffect(() => {
-    if (!playOnMount || done.current) {
-      setDisplay(text);
+    const el = ref.current;
+    if (!el) return;
+    if (prefersReducedMotion()) {
+      el.textContent = text;
       return;
     }
-    const len = text.length;
+    const delay = first.current ? 250 : 0;
+    first.current = false;
     let frame = 0;
-    const total = 28;
-    const id = setInterval(() => {
+    const total = 18;
+    let raf = 0;
+    let last = 0;
+    const tick = (t: number) => {
+      if (t - last < 34) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      last = t;
       frame += 1;
-      const progress = frame / total;
-      const revealed = Math.floor(progress * len);
+      const revealed = Math.floor((frame / total) * text.length);
       let out = '';
-      for (let i = 0; i < len; i++) {
-        if (text[i] === ' ') {
-          out += ' ';
-        } else if (i < revealed) {
-          out += text[i];
-        } else {
-          out += CHARS[Math.floor(Math.random() * CHARS.length)];
-        }
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        out += ch === ' ' || i < revealed ? ch : GLYPHS[(Math.random() * GLYPHS.length) | 0];
       }
-      setDisplay(out);
-      if (frame >= total) {
-        clearInterval(id);
-        setDisplay(text);
-        done.current = true;
-      }
-    }, 32);
-    return () => clearInterval(id);
-  }, [text, playOnMount]);
-
-  useEffect(() => {
-    if (!ref.current || !playOnMount) return;
-    gsap.fromTo(ref.current, { opacity: 0 }, { opacity: 1, duration: 0.4, ease: 'power2.out' });
-  }, [playOnMount]);
+      el.textContent = out;
+      if (frame < total) raf = requestAnimationFrame(tick);
+      else el.textContent = text;
+    };
+    const timer = window.setTimeout(() => {
+      raf = requestAnimationFrame(tick);
+    }, delay);
+    return () => {
+      window.clearTimeout(timer);
+      cancelAnimationFrame(raf);
+      el.textContent = text;
+    };
+  }, [text]);
 
   return (
-    <span ref={ref} className={className}>
-      {display || text}
+    <span ref={ref} className={className} aria-label={text}>
+      {text}
     </span>
   );
 }

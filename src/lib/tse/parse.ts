@@ -14,7 +14,11 @@ function num(s: string | undefined): number {
 }
 
 function pctFromField(pstn: string | undefined, pst: string | undefined): number {
-  if (pstn) return Number(pstn) / 100;
+  /* campos "n" já vêm em % com precisão cheia e vírgula decimal ("47,027772356") */
+  if (pstn) {
+    const v = Number(pstn.replace(',', '.'));
+    if (Number.isFinite(v)) return v;
+  }
   return num(pst);
 }
 
@@ -45,7 +49,8 @@ export function parseTurnout(raw: TseResultFile): TurnoutStats {
       turnoutPct = (comparecimento / electorate) * 100;
     }
     blankPct = pctFromField(undefined, raw.v?.pvb);
-    nullPct = pctFromField(undefined, raw.v?.pvn);
+    /* ptvn = nulos sobre o total de votos; pvn é a fatia dentro dos nulos */
+    nullPct = pctFromField(raw.v?.ptvnn, raw.v?.ptvn ?? raw.v?.pvn);
   }
 
   const turnout = comparecimento > 0 ? comparecimento : electorate - abstentions;
