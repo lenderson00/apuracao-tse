@@ -90,6 +90,10 @@ export function BrazilMap({
       .enter()
       .append('path')
       .attr('class', 'map-region')
+      .attr('data-uf', (d) => {
+        const p = d.properties as { sigla?: string; id?: string };
+        return p.sigla?.toLowerCase() ?? p.id ?? '';
+      })
       .attr('d', (d) => pathGen(d as GeoJSON.Feature<Geometry>) ?? '')
       .attr('fill', (_, i) => {
         if (level === 'country') {
