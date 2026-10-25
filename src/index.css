@@ -713,3 +713,26 @@
   .section-chip { height: 25px; }
   .bu-vote { padding-block: 3px; }
 }
+
+/* modo live: canto reservado para a câmera do streamer. Só cantos marcados, o
+   resto fica vazio para o OBS sobrepor a imagem. */
+.cam-slot {
+  background:
+    linear-gradient(var(--line-loud), var(--line-loud)) top left / 28px 2px,
+    linear-gradient(var(--line-loud), var(--line-loud)) top left / 2px 28px,
+    linear-gradient(var(--line-loud), var(--line-loud)) top right / 28px 2px,
+    linear-gradient(var(--line-loud), var(--line-loud)) top right / 2px 28px,
+    linear-gradient(var(--line-loud), var(--line-loud)) bottom left / 28px 2px,
+    linear-gradient(var(--line-loud), var(--line-loud)) bottom left / 2px 28px,
+    linear-gradient(var(--line-loud), var(--line-loud)) bottom right / 28px 2px,
+    linear-gradient(var(--line-loud), var(--line-loud)) bottom right / 2px 28px;
+  background-repeat: no-repeat;
+}
+.live-ctl {
+  opacity: 0.35;
+  transition: opacity 200ms var(--ease-standard);
+}
+.live-ctl:hover,
+.live-ctl:focus-within {
+  opacity: 1;
+}

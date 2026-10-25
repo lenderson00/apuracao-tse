@@ -1,6 +1,7 @@
 import { candidateView } from './lib/ui/candidate';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { BrazilMap, type Camera, type CameraTarget, type Insets, type MapApi, type MapLevel } from './components/BrazilMap';
+import { LiveMode } from './components/LiveMode';
 import {
   AboutContent,
   Brand,
@@ -62,6 +63,52 @@ export default function App() {
   const [legendOn, setLegendOn] = useState(true);
   const [pop, setPop] = useState<'about' | 'keys' | null>(null);
   const [searching, setSearching] = useState(false);
+  // modo live (streamers): ?live=1 abre direto; ?cam=1 reserva o canto da câmera
+  const [live, setLive] = useState(() => new URLSearchParams(location.search).get('live') === '1');
+  const [cam, setCam] = useState(() => new URLSearchParams(location.search).get('cam') === '1');
+  const [liveInsets, setLiveInsets] = useState<Insets>({ top: 140, right: 0, bottom: 24, left: 24 });
+  const fsByUs = useRef(false);
+  const setLiveUrl = useCallback((on: boolean, withCam: boolean) => {
+    const u = new URL(location.href);
+    if (on) u.searchParams.set('live', '1');
+    else u.searchParams.delete('live');
+    if (on && withCam) u.searchParams.set('cam', '1');
+    else u.searchParams.delete('cam');
+    history.replaceState(history.state, '', u);
+  }, []);
+  const enterLive = useCallback(() => {
+    setLive(true);
+    setLiveUrl(true, cam);
+    const el = document.documentElement;
+    if (el.requestFullscreen && !document.fullscreenElement)
+      el.requestFullscreen({ navigationUI: 'hide' })
+        .then(() => (fsByUs.current = true))
+        .catch(() => undefined);
+  }, [cam, setLiveUrl]);
+  const exitLive = useCallback(() => {
+    setLive(false);
+    setLiveUrl(false, false);
+    if (fsByUs.current && document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    fsByUs.current = false;
+  }, [setLiveUrl]);
+  const toggleCam = useCallback(() => {
+    setCam((c) => {
+      setLiveUrl(true, !c);
+      return !c;
+    });
+  }, [setLiveUrl]);
+  // Esc dentro da tela cheia é consumido pelo navegador: sair da tela cheia sai do modo live
+  useEffect(() => {
+    const onFs = () => {
+      if (!document.fullscreenElement && fsByUs.current) {
+        fsByUs.current = false;
+        setLive(false);
+        setLiveUrl(false, false);
+      }
+    };
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, [setLiveUrl]);
   const mapApi = useRef<MapApi>(null);
 
   const office = OFFICES.find((o) => o.id === officeId)!;
@@ -304,6 +351,10 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (live) {
+        if (e.key === 'Escape') exitLive();
+        return;
+      }
       if (e.key === 'Escape' && !pop) back();
       else if (e.key === '+' || e.key === '=') mapApi.current?.zoomBy(1.6);
       else if (e.key === '-' || e.key === '_') mapApi.current?.zoomBy(1 / 1.6);
@@ -311,7 +362,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [back, pop]);
+  }, [back, pop, live, exitLive]);
 
   useEffect(() => {
     document.title = scope === 'br' ? 'Apuração das Eleições 2026' : `${title} · Apuração 2026`;
@@ -410,7 +461,7 @@ export default function App() {
     if (toolbarRef.current) ro.observe(toolbarRef.current);
     if (dockRef.current) ro.observe(dockRef.current);
     return () => ro.disconnect();
-  }, [desktop, peek]);
+  }, [desktop, peek, live]);
 
   const crumbs: Crumb[] = [{ label: 'Brasil', onClick: goCountry }];
   if (ufMeta)
@@ -566,7 +617,7 @@ export default function App() {
       munViews={heatMuns}
       disabledStates={disabledStates}
       awaiting={awaiting}
-      insets={insets}
+      insets={live ? liveInsets : insets}
       touch={touch}
       onActivate={onActivate}
       onZoomFocus={onZoomFocus}
@@ -609,6 +660,26 @@ export default function App() {
     </>
   );
 
+  /* -------------------------------------------------------------- modo live */
+  if (live) {
+    return (
+      <LiveMode
+        map={map}
+        sources={sources}
+        data={shown}
+        stale={stale}
+        title={title}
+        context={context}
+        round={round}
+        photoUf={photoUf}
+        cam={cam}
+        onCam={toggleCam}
+        onExit={exitLive}
+        onInsets={setLiveInsets}
+      />
+    );
+  }
+
   /* ---------------------------------------------------------------- desktop */
   if (desktop) {
     return (
@@ -635,6 +706,12 @@ export default function App() {
               icon: 'layers',
               onClick: () => setLegendOn((v) => !v),
               active: legendOn,
+            },
+            {
+              id: 'live',
+              label: 'Modo live (tela cheia para transmitir)',
+              icon: 'live',
+              onClick: enterLive,
             },
             {
               id: 'keys',
@@ -775,6 +852,16 @@ export default function App() {
                   <Icon name="external" size={15} /> Site do TSE
                 </button>
               </div>
+              <button
+                type="button"
+                className="btn btn-outline mt-2 w-full"
+                onClick={() => {
+                  setPop(null);
+                  enterLive();
+                }}
+              >
+                <Icon name="live" size={15} /> Modo live
+              </button>
             </Popover>
           </div>
         )}
