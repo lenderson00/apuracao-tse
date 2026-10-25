@@ -16,6 +16,7 @@ import { Tabs } from './ui/Tabs';
 
 interface Props {
   selectionKey: string;
+  candidateLabel?: string;
   candidatePanel?: ReactNode;
   zonesPanel?: ReactNode;
   mode: 'desktop' | 'mobile';
@@ -120,6 +121,7 @@ export function Dock(props: Props) {
             )
           }
           candidate={props.candidatePanel}
+          candidateLabel={props.candidateLabel}
           zones={props.zonesPanel}
         />
       ) : (
@@ -181,7 +183,7 @@ function MobileSheet({
   }, [onPeekHeight]);
 
   const tabs = [
-    ...(props.candidatePanel ? [{ value: 'candidate' as const, label: 'Candidato' }] : []),
+    ...(props.candidatePanel ? [{ value: 'candidate' as const, label: props.candidateLabel ?? 'Perfil' }] : []),
     ...(props.zonesPanel ? [{ value: 'zones' as const, label: 'Zonas' }] : []),
     ...(duel ? [] : [{ value: 'cand' as const, label: 'Candidatos' }]),
     { value: 'part' as const, label: 'Participação' },

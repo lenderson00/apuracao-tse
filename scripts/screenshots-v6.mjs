@@ -46,7 +46,7 @@ for (const mobile of process.env.SHOT_MODE === 'mobile' ? [true] : [false, true]
   await shot('busca-candidato');
   await page.getByRole('option').filter({ hasText: 'Lula' }).first().getByRole('button').click();
   if (mobile) await page.getByRole('button', { name: 'Expandir painel' }).click();
-  await page.getByRole('tab', { name: 'Candidato', exact: true }).click();
+  await page.getByRole('tab', { name: 'Lula 13', exact: true }).click();
   await page.waitForTimeout(1000);
   await shot('candidato-pais');
   if (mobile) await page.getByRole('button', { name: 'Recolher painel' }).click();
@@ -55,14 +55,14 @@ for (const mobile of process.env.SHOT_MODE === 'mobile' ? [true] : [false, true]
   await page.waitForTimeout(12000);
   // O breadcrumb da UF volta ao mapa municipal sem município fixado.
   const stateCrumb = page.getByRole('button', { name: mobile ? 'SP' : 'São Paulo', exact: true }).first();
-  await stateCrumb.click().catch(async error => {
+  await stateCrumb.click().catch(async (error) => {
     console.error('Navegação:', await page.title(), (await page.locator('body').innerText()).slice(-2200));
-    await page.screenshot({path: `${output}/debug-navegacao-${mobile ? 'mobile' : 'desktop'}.png`});
+    await page.screenshot({ path: `${output}/debug-navegacao-${mobile ? 'mobile' : 'desktop'}.png` });
     throw error;
   });
   await page.waitForTimeout(4000);
   if (mobile) await page.getByRole('button', { name: 'Expandir painel' }).click();
-  await page.getByRole('tab', { name: 'Candidato', exact: true }).click();
+  await page.getByRole('tab', { name: 'Lula 13', exact: true }).click();
   await shot('candidato-uf');
   if (mobile) await page.getByRole('button', { name: 'Recolher painel' }).click();
   await search('São Paulo');
@@ -93,12 +93,19 @@ for (const mobile of process.env.SHOT_MODE === 'mobile' ? [true] : [false, true]
     throw e;
   });
   assert.match(await original.getAttribute('href'), /^https:\/\/resultados\.tse\.jus\.br\/oficial\//);
-  await page.getByRole('heading', { name: 'Boletim · Seção 0001' }).evaluate((heading) => {
-    let scroller = heading.parentElement;
-    while (scroller && scroller.scrollHeight <= scroller.clientHeight) scroller = scroller.parentElement;
-    if (scroller) scroller.scrollTop += heading.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
-  });
+  const linkBox = await original.boundingBox();
+  assert.ok(linkBox && linkBox.y >= 0 && linkBox.y + linkBox.height <= (mobile ? 844 : 900), 'Link original visível');
+  assert.equal(await page.getByRole('button', { name: 'Seção 0001', exact: true }).getAttribute('aria-pressed'), 'true');
   await shot('boletim');
+  if (!mobile) await shot('secoes');
+  await page.getByRole('button', { name: 'Próxima seção', exact: true }).click();
+  await page.getByRole('heading', { name: 'Boletim · Seção 0002', exact: true }).waitFor();
+  await page.keyboard.press('ArrowLeft');
+  await page.getByRole('heading', { name: 'Boletim · Seção 0001', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Zona 0001', exact: true }).click();
+  await page.getByRole('button', { name: 'Seções', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Zonas', exact: true }).click();
+  await page.getByRole('button', { name: 'Zona 0002', exact: true }).waitFor();
   assert.ok(zonePeak <= 6, `Concorrência de zonas: ${zonePeak}`);
   assert.equal(indexRequests, 1);
   assert.deepEqual(errors, []);

@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fetchZoneResult } from '../lib/tse/client';
 import { parseResult } from '../lib/tse/parse';
 import { fetchSectionIndex, fetchSectionFiles, fetchBoletim, type SectionRef } from '../lib/tse/urna';
 import { fmtBuDate, type BoletimUrna } from '../lib/tse/bu';
 import { OFFICES } from '../lib/tse/config';
 import type { CandidateRow, MunicipalityRef, OfficeId, ParsedResult, Round } from '../lib/tse/types';
+import { candFill } from '../lib/ui/color';
+import { sectionAuxUrl } from '../lib/tse/urna';
 import { fmtPct, titleCase } from '../lib/ui/format';
 import { Int, Pct } from './ui/Num';
 import { Skeleton } from './ui/Skeleton';
@@ -37,7 +39,6 @@ export function Zones({
   selected?: CandidateRow;
 }) {
   const [results, setResults] = useState<Record<string, ParsedResult | null>>({});
-  const [sectionsOpen, setSectionsOpen] = useState(false);
   const [zone, setZone] = useState<string | null>(m.zones.length === 1 ? m.zones[0] : null);
   useEffect(() => {
     let alive = true;
@@ -66,86 +67,62 @@ export function Zones({
       alive = false;
     };
   }, [m, round, officeId]);
+  const loaded = Object.values(results).filter(Boolean);
+  const leader = selected ?? [...candidates].sort((a, b) => b.votes - a.votes)[0];
+  const leads = loaded.filter((r) => r && r.candidates[0]?.votes > 0 && r.candidates[0]?.sqcand === leader?.sqcand).length;
   const d = zone ? results[zone] : undefined;
+  if (zone)
+    return (
+      <ZoneDetail
+        key={zone}
+        {...{ round, officeId, zone }}
+        municipality={m}
+        data={d}
+        candidates={d?.candidates ?? candidates}
+        onBack={() => setZone(null)}
+      />
+    );
   return (
-    <div className="space-y-3">
-      {zone ? (
-        <>
-          <button
-            className="btn text-caption"
-            onClick={() => {
-              setZone(null);
-              setSectionsOpen(false);
-            }}
-          >
-            Todas as zonas
-          </button>
-          <h3 className="text-title">Zona {zone}</h3>
-          {d === undefined ? (
-            <Skeleton className="h-20 w-full" />
-          ) : d === null ? (
-            <p>Não foi possível obter o resultado desta zona no TSE.</p>
-          ) : (
-            <>
-              <p className="text-caption text-ink-3">{fmtPct(d.turnout.sectionsPct)} apurado</p>
-              {!sectionsOpen && <CandidateRows rows={d.candidates} />}
-            </>
-          )}
-          <Sections
-            key={zone}
-            onToggle={setSectionsOpen}
-            {...{ round, officeId, zone }}
-            municipality={m}
-            candidates={d?.candidates ?? candidates}
-          />
-        </>
-      ) : m.zones.length ? (
-        <div>
-          {[...m.zones].sort().map((z) => {
-            const r = results[z];
-            const c = selected ? r?.candidates.find((c) => c.sqcand === selected.sqcand) : r?.candidates[0];
-            return (
-              <button
-                key={z}
-                className="block w-full border-b border-line py-3 text-left hover:bg-hover"
-                onClick={() => {
-                  setZone(z);
-                  setSectionsOpen(false);
-                }}
-              >
-                <div className="flex justify-between text-small">
-                  <strong>Zona {z}</strong>
-                  <span>{r ? `${fmtPct(r.turnout.sectionsPct)} apurado` : r === null ? 'Indisponível' : 'Carregando…'}</span>
+    <div>
+      <p className="mb-2 text-caption text-ink-3">
+        {m.zones.length} zonas · {leader ? `${titleCase(leader.shortName)} líder em ${leads}` : 'aguardando resultados'}
+        {Object.keys(results).length < m.zones.length ? ` (${Object.keys(results).length} carregadas)` : ''}
+      </p>
+      <div className="grid grid-cols-1 gap-x-5 lg:grid-cols-3">
+        {[...m.zones].sort().map((z) => {
+          const r = results[z];
+          const c = selected ? r?.candidates.find((c) => c.sqcand === selected.sqcand) : r?.candidates[0];
+          return (
+            <button key={z} onClick={() => setZone(z)} className="min-w-0 py-2 text-left hover:bg-hover" aria-label={`Zona ${z}`}>
+              <div className="flex items-baseline gap-1.5 text-caption">
+                <strong className="shrink-0 font-medium">Zona {z}</strong>
+                <span className="min-w-0 flex-1 truncate text-ink-2">
+                  {r
+                    ? c && c.votes > 0
+                      ? `${titleCase(c.shortName)} ${fmtPct(c.percent)}`
+                      : 'Sem votos'
+                    : r === null
+                      ? 'Indisponível'
+                      : 'Carregando…'}
+                </span>
+                <span className="shrink-0 font-mono text-nano text-ink-3" title="Apurado">
+                  {r ? fmtPct(r.turnout.sectionsPct) : '…'}
+                </span>
+              </div>
+              {r === undefined ? (
+                <Skeleton className="mt-1 h-0.5 w-full" />
+              ) : (
+                <div className="mt-1 flex h-0.5 overflow-hidden bg-hover">
+                  {r?.candidates.slice(0, 2).map((c) => (
+                    <span key={c.sqcand} style={{ width: `${c.percent}%`, background: candFill(c.color) }} />
+                  ))}
                 </div>
-                {r === undefined ? (
-                  <Skeleton className="mt-2 h-4 w-full" />
-                ) : (
-                  r && (
-                    <>
-                      <p className="mt-1 text-caption text-ink-2">
-                        {c ? `${titleCase(c.shortName)} · ${fmtPct(c.percent)}` : 'Sem votos apurados'}
-                      </p>
-                      <div className="mt-2 flex h-1 overflow-hidden rounded-full bg-hover">
-                        {r.candidates.slice(0, 2).map((c) => (
-                          <span
-                            key={c.sqcand}
-                            style={{
-                              width: `${c.percent}%`,
-                              background: c.color,
-                            }}
-                          />
-                        ))}
-                      </div>
-                    </>
-                  )
-                )}
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        <p>O TSE não informou as zonas deste município.</p>
-      )}
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {!m.zones.length && <p className="text-small text-ink-3">O TSE não informou as zonas deste município.</p>}
     </div>
   );
 }
@@ -153,12 +130,9 @@ function CandidateRows({ rows }: { rows: CandidateRow[] }) {
   return (
     <ol>
       {rows.map((c, i) => (
-        <li key={c.sqcand} className="flex items-center justify-between gap-3 py-1.5 text-small">
-          <span className="min-w-0 truncate">
-            {i + 1}º · {titleCase(c.shortName)}{' '}
-            <small className="text-ink-3">
-              {c.number} · {c.party}
-            </small>
+        <li key={c.sqcand} className="flex justify-between gap-2 py-1 text-caption">
+          <span className="truncate">
+            {i + 1}º · {c.number} · {titleCase(c.shortName)} <span className="text-ink-3">{c.party}</span>
           </span>
           <span className="shrink-0">
             <Int value={c.votes} /> · <Pct value={c.percent} />
@@ -168,31 +142,37 @@ function CandidateRows({ rows }: { rows: CandidateRow[] }) {
     </ol>
   );
 }
-function Sections({
-  onToggle,
+function ZoneDetail({
   municipality: m,
   round,
   officeId,
   zone,
+  data,
   candidates,
+  onBack,
 }: {
-  onToggle: (open: boolean) => void;
   municipality: MunicipalityRef;
   round: Round;
   officeId: OfficeId;
   zone: string;
+  data: ParsedResult | null | undefined;
   candidates: CandidateRow[];
+  onBack: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [sections, setSections] = useState<SectionRef[] | null>(null);
-  const [error, setError] = useState('');
   const [section, setSection] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     let alive = true;
     fetchSectionIndex(round, m.uf.toLowerCase())
       .then((idx) => {
-        if (alive) setSections(idx.get(m.tseCode)?.get(zone) ?? []);
+        if (alive) {
+          setError('');
+          setSections([...(idx.get(m.tseCode)?.get(zone) ?? [])].sort((a, b) => Number(a.ns) - Number(b.ns)));
+        }
       })
       .catch(() => {
         if (alive) setError('Não foi possível carregar o índice de seções.');
@@ -201,53 +181,124 @@ function Sections({
       alive = false;
     };
   }, [open, round, m, zone]);
+  const index = sections?.findIndex((s) => s.ns === section) ?? -1;
+  function move(step: number) {
+    if (!sections || index < 0) return;
+    const next = sections[index + step];
+    if (next) setSection(next.ns);
+  }
+  useEffect(() => {
+    if (!section || !sections) return;
+    const key = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.closest('[role="tablist"]')) return;
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      const next = sections[index + (e.key === 'ArrowRight' ? 1 : -1)];
+      if (next) setSection(next.ns);
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [section, sections, index]);
+  useEffect(() => {
+    const grid = gridRef.current;
+    const active = grid?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (grid && active) {
+      const delta = active.getBoundingClientRect().top - grid.getBoundingClientRect().top;
+      if (delta < 0 || delta + active.offsetHeight > grid.clientHeight) grid.scrollTop += delta;
+    }
+  }, [section]);
   return (
-    <div className="border-t border-line pt-3">
-      <button
-        className="btn btn-solid"
-        onClick={() => {
-          setOpen(!open);
-          onToggle(!open);
-        }}
-      >
-        Seções
-      </button>
-      {!open && ['SP', 'MG', 'RJ'].includes(m.uf.toUpperCase()) && (
-        <p className="mt-1 text-nano text-ink-3">
-          Carrega o índice da UF inteira
-          {m.uf.toUpperCase() === 'SP' ? ' (cerca de 460 KB compactados)' : ''}.
-        </p>
-      )}
-      {open && (
-        <div className="mt-3">
-          {error ? (
-            <p>{error}</p>
-          ) : sections === null ? (
-            <Skeleton className="h-16 w-full" />
-          ) : section ? (
-            <>
-              <button className="btn text-caption" onClick={() => setSection(null)}>
-                Todas as seções
-              </button>
-              <Boletim key={section} {...{ round, officeId, zone, section, candidates }} municipality={m} />
-            </>
+    <div className="zone-detail">
+      <nav aria-label="Navegação da zona" className="mb-2 flex h-7 shrink-0 items-center gap-2 text-caption text-ink-3">
+        <button onClick={onBack} className="hover:text-ink">
+          Zonas
+        </button>
+        <span>/</span>
+        <button
+          className="text-ink"
+          onClick={() => {
+            setOpen(false);
+            setSection(null);
+          }}
+        >
+          Zona {zone}
+        </button>
+        {section && (
+          <>
+            <span>/</span>
+            <span className="text-ink">Seção {section}</span>
+          </>
+        )}
+        <span className="ml-auto hidden font-mono text-nano lg:inline">{data ? `${fmtPct(data.turnout.sectionsPct)} apurado` : ''}</span>
+      </nav>
+      {!open ? (
+        <>
+          {data === undefined ? (
+            <Skeleton className="h-24 w-full" />
+          ) : data === null ? (
+            <p className="text-small text-ink-3">Não foi possível obter o resultado desta zona no TSE.</p>
           ) : (
-            <>
-              <p className="mb-2 text-caption text-ink-3">{sections.length} seções · esmaecidas: ainda não recebidas</p>
-              <div className="flex flex-wrap gap-1">
-                {sections.map((s) => (
-                  <button
-                    key={s.ns}
-                    className={`cell px-2 py-1.5 font-mono text-caption ${s.receivedAt ? '' : 'opacity-40'}`}
-                    onClick={() => setSection(s.ns)}
-                  >
-                    Seção {s.ns}
-                  </button>
-                ))}
-              </div>
-              {!sections.length && <p>O TSE ainda não publicou seções para esta zona.</p>}
-            </>
+            <CandidateRows rows={data.candidates} />
           )}
+          <button className="btn btn-solid mt-2" onClick={() => setOpen(true)}>
+            Seções
+          </button>
+          {['SP', 'MG', 'RJ'].includes(m.uf.toUpperCase()) && (
+            <span className="ml-2 text-nano text-ink-3">Índice da UF inteira{m.uf.toUpperCase() === 'SP' ? ' · cerca de 460 KB' : ''}</span>
+          )}
+        </>
+      ) : error ? (
+        <p className="text-small">{error}</p>
+      ) : !sections ? (
+        <Skeleton className="h-32 w-full" />
+      ) : (
+        <div className="section-workspace">
+          <aside className="flex min-h-0 flex-col">
+            <div className="mb-2 flex items-center justify-between text-nano text-ink-3">
+              <span>{sections.length} seções</span>
+              <span>Esmaecidas: não recebidas</span>
+            </div>
+            <div ref={gridRef} className="section-grid scroll-y">
+              {sections.map((s) => (
+                <button
+                  key={s.ns}
+                  aria-label={`Seção ${s.ns}`}
+                  aria-pressed={section === s.ns}
+                  onClick={() => setSection(s.ns)}
+                  className={`section-chip ${section === s.ns ? 'is-active' : ''} ${s.receivedAt ? '' : 'opacity-40'}`}
+                >
+                  {s.ns}
+                </button>
+              ))}
+            </div>
+          </aside>
+          <div className="flex min-h-0 min-w-0 flex-col">
+            {section ? (
+              <>
+                <div className="mb-1 flex shrink-0 items-center gap-2 text-caption">
+                  <h3 className="flex-1 font-medium">Boletim · Seção {section}</h3>
+                  <span className="text-nano text-ink-3">
+                    {index + 1}/{sections.length}
+                  </span>
+                  <button className="section-arrow" aria-label="Seção anterior" disabled={index <= 0} onClick={() => move(-1)}>
+                    ←
+                  </button>
+                  <button
+                    className="section-arrow"
+                    aria-label="Próxima seção"
+                    disabled={index >= sections.length - 1}
+                    onClick={() => move(1)}
+                  >
+                    →
+                  </button>
+                </div>
+                <Boletim key={section} {...{ round, officeId, zone, section, candidates }} municipality={m} />
+              </>
+            ) : (
+              <p className="m-auto text-small text-ink-3">Escolha uma seção para abrir o boletim.</p>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -298,72 +349,103 @@ function Boletim({
   }, [m, round, officeId, zone, section]);
   const election = bu?.elections.find((e) => e.electionId === Number(OFFICES.find((o) => o.id === officeId)!.electionCode(round)));
   const office = election?.offices.find((o) => o.officeCode === Number(officeId));
+  const nominal = office?.votes.filter((v) => v.kind === 'nominal').sort((a, b) => b.votes - a.votes) ?? [];
+  const valid = nominal.reduce((sum, v) => sum + v.votes, 0);
+  const pct = (n: number, total: number) => (total ? (n / total) * 100 : 0);
+  const original = (url || sectionAuxUrl(round, m.uf.toLowerCase(), m.tseCode, zone, section)).replace(
+    '/api/tse',
+    'https://resultados.tse.jus.br',
+  );
   return (
-    <div className="space-y-3">
-      <h3 className="text-title">Boletim · Seção {section}</h3>
-      {error ? (
-        <p className="text-small text-ink-2">{error}</p>
-      ) : !bu ? (
-        <Skeleton className="h-24 w-full" />
-      ) : !office || !election ? (
-        <p>Este boletim não contém o cargo e turno selecionados.</p>
-      ) : (
-        <>
-          <div className="flex flex-wrap gap-4 text-caption">
-            <span>
-              Aptos <Int value={election.electorate} />
-            </span>
-            <span>
-              Comparecimento <Int value={office.turnout} />
-            </span>
-            <span>
-              Abstenção <Int value={election.electorate - office.turnout} />
-            </span>
-          </div>
-          <ol>
-            {office.votes.map((v, i) => {
-              const c = v.kind === 'nominal' ? candidates.find((c) => Number(c.number) === v.number) : undefined;
-              const label = c
-                ? `${titleCase(c.shortName)} · ${c.number} · ${c.party}`
-                : v.kind === 'nominal'
-                  ? `Número ${v.number}`
-                  : {
-                      branco: 'Brancos',
-                      nulo: 'Nulos',
-                      legenda: `Legenda ${v.number ?? v.party ?? ''}`,
-                      semCandidato: 'Sem candidato',
-                    }[v.kind];
-              return (
-                <li key={i} className="flex justify-between gap-2 py-1 text-small">
-                  <span>{label}</span>
-                  <Int value={v.votes} />
-                </li>
-              );
-            })}
-          </ol>
-          {bu.emittedAt && <p className="text-nano text-ink-3">Emitido em {fmtBuDate(bu.emittedAt)}</p>}
-        </>
-      )}
-      {url && (
-        <a
-          className="text-caption text-accent"
-          target="_blank"
-          rel="noreferrer"
-          href={url.replace('/api/tse', 'https://resultados.tse.jus.br')}
-        >
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-nano">
+        <span className="text-ink-3">
+          Zona {zone} · Local {bu?.local ?? 'não informado'}
+        </span>
+        <a className="text-accent" target="_blank" rel="noreferrer" href={original}>
           Arquivo original no TSE ↗
         </a>
-      )}
+      </div>
+      {bu?.emittedAt && <p className="mb-2 shrink-0 text-nano text-ink-3">Emitido em {fmtBuDate(bu.emittedAt)}</p>}
+      <div className="scroll-y min-h-0 flex-1">
+        {error ? (
+          <p className="py-3 text-small text-ink-2">{error}</p>
+        ) : !bu ? (
+          <Skeleton className="h-24 w-full" />
+        ) : !office || !election ? (
+          <p className="text-small">Este boletim não contém o cargo e turno selecionados.</p>
+        ) : (
+          <>
+            <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-nano text-ink-2">
+              <span>
+                Aptos <Int value={election.electorate} />
+              </span>
+              <span>
+                Comparecimento <Int value={office.turnout} />
+              </span>
+              <span>
+                Abstenção <Int value={election.electorate - office.turnout} />
+              </span>
+            </div>
+            <p className="mb-1 text-nano text-ink-3">Votos nominais · % dos válidos nominais</p>
+            <ol>
+              {nominal.map((v, i) => {
+                const c = candidates.find((c) => Number(c.number) === v.number);
+                const percent = pct(v.votes, valid);
+                return (
+                  <li key={i} className="bu-vote">
+                    <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto_auto] items-baseline gap-2 text-caption">
+                      <span className="font-mono text-ink-3">{v.number}</span>
+                      <span className="truncate">
+                        {c ? titleCase(c.shortName) : `Número ${v.number}`}{' '}
+                        <small className="text-nano text-ink-3">{c?.party ?? (v.party ? `Partido ${v.party}` : '')}</small>
+                      </span>
+                      <Int value={v.votes} />
+                      <Pct className="w-16 text-right" value={percent} />
+                    </div>
+                    <div className="mt-1 h-0.5 bg-hover">
+                      <div className="h-full" style={{ width: `${percent}%`, background: c ? candFill(c.color) : '#a1a1aa' }} />
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+            <div className="mt-2 border-t border-line pt-1">
+              {office.votes
+                .filter((v) => v.kind !== 'nominal')
+                .map((v, i) => (
+                  <div key={i} className="flex items-baseline gap-2 py-1 text-caption">
+                    <span className="flex-1 text-ink-3">
+                      {
+                        {
+                          branco: 'Brancos',
+                          nulo: 'Nulos',
+                          legenda: `Legenda ${v.number ?? v.party ?? ''}`,
+                          semCandidato: 'Sem candidato',
+                        }[v.kind as 'branco' | 'nulo' | 'legenda' | 'semCandidato']
+                      }
+                    </span>
+                    <Int value={v.votes} />
+                    <Pct className="w-16 text-right" value={pct(v.votes, office.turnout)} />
+                  </div>
+                ))}
+              <p className="text-right text-nano text-ink-3">% do comparecimento</p>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
 export function DetailTabs({
   result,
   candidate,
+  candidateLabel,
   zones,
 }: {
   result: React.ReactNode;
   candidate?: React.ReactNode;
+  candidateLabel?: string;
   zones?: React.ReactNode;
 }) {
   const [tab, setTab] = useState(candidate ? 'candidate' : 'result');
@@ -376,11 +458,11 @@ export function DetailTabs({
         onChange={setTab}
         items={[
           { value: 'result', label: 'Resultado' },
-          ...(candidate ? [{ value: 'candidate', label: 'Candidato' }] : []),
+          ...(candidate ? [{ value: 'candidate', label: candidateLabel ?? 'Perfil' }] : []),
           ...(zones ? [{ value: 'zones', label: 'Zonas' }] : []),
         ]}
       />
-      <div className="scroll-y min-h-0 max-h-[42dvh] py-3" data-dock-anim>
+      <div className="scroll-y min-h-0 max-h-[42dvh] py-2" data-dock-anim>
         {tab === 'zones' && zones ? zones : tab === 'candidate' && candidate ? candidate : result}
       </div>
     </>

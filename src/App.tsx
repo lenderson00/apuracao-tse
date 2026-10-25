@@ -486,9 +486,12 @@ export default function App() {
     <Dock
       selectionKey={`${round}|${officeId}|${scope}|${code}`}
       key={candidatePick?.candidate.sqcand ?? 'leaders'}
+      candidateLabel={candidatePick ? `${titleCase(candidatePick.candidate.shortName)} ${candidatePick.candidate.number}` : undefined}
       candidatePanel={
         candidatePick ? (
           <CandidatePanel
+            total={focusUf ? munInUf.length : UF_LIST.length}
+            unit={focusUf ? 'municípios' : 'UFs'}
             pick={candidatePick}
             data={q.data}
             regions={

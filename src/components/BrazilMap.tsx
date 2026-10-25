@@ -12,10 +12,7 @@ import { MapTooltip, type HoverInfo } from './MapTooltip';
 /* -------------------------------------------------------------------------- */
 /* tipos públicos                                                              */
 
-export type CameraTarget =
-  | { kind: 'country' }
-  | { kind: 'state'; uf: string }
-  | { kind: 'mun'; uf: string; ibge: string };
+export type CameraTarget = { kind: 'country' } | { kind: 'state'; uf: string } | { kind: 'mun'; uf: string; ibge: string };
 
 export interface Camera {
   target: CameraTarget;
@@ -95,17 +92,7 @@ interface MunLayer {
 /* -------------------------------------------------------------------------- */
 
 export function BrazilMap(props: Props) {
-  const {
-    camera,
-    focusUf,
-    highlightIbge,
-    stateViews,
-    munViews,
-    disabledStates,
-    awaiting,
-    touch,
-    apiRef,
-  } = props;
+  const { camera, focusUf, highlightIbge, stateViews, munViews, disabledStates, awaiting, touch, apiRef } = props;
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -202,7 +189,11 @@ export function BrazilMap(props: Props) {
 
   const countryBounds = useCallback((): [[number, number], [number, number]] => {
     const p = proj.current;
-    if (!p || !states) return [[0, 0], [WORLD, WORLD]];
+    if (!p || !states)
+      return [
+        [0, 0],
+        [WORLD, WORLD],
+      ];
     return p.path.bounds(states) as [[number, number], [number, number]];
   }, [states]);
 
@@ -345,6 +336,7 @@ export function BrazilMap(props: Props) {
         rootRef.current?.style.setProperty('--k', String(t.k));
         // hachurado em pixels de tela, não em unidades do mapa
         hatchRef.current?.setAttribute('patternTransform', `rotate(45) scale(${1 / t.k})`);
+        svgEl.querySelector('#candidate-missing')?.setAttribute('patternTransform', `scale(${1 / t.k})`);
         notifyZoom();
         // grade de pontos acompanha a câmera, repetindo a cada oitava de zoom
         const wrap = wrapRef.current;
@@ -676,7 +668,11 @@ export function BrazilMap(props: Props) {
       const [cx, cy] = p.path.centroid(d);
       gsap
         .timeline()
-        .fromTo(this, { scale: 1, opacity: 0.6, svgOrigin: `${cx} ${cy}` }, { scale: 1.045, opacity: 1, duration: 0.26, ease: 'back.out(2)', svgOrigin: `${cx} ${cy}` })
+        .fromTo(
+          this,
+          { scale: 1, opacity: 0.6, svgOrigin: `${cx} ${cy}` },
+          { scale: 1.045, opacity: 1, duration: 0.26, ease: 'back.out(2)', svgOrigin: `${cx} ${cy}` },
+        )
         .to(this, { scale: 1, duration: 0.7, ease: 'power3.inOut', svgOrigin: `${cx} ${cy}` }, '+=0.75');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -708,7 +704,13 @@ export function BrazilMap(props: Props) {
     if (highlightIbge) {
       const f = findMun(highlightIbge);
       const v = munViews[highlightIbge];
-      if (f) shapes.push({ key: `pick-${highlightIbge}`, d: p.path(f) ?? '', kind: 'pick', color: v?.color ? candFill(v.color) : 'var(--text)' });
+      if (f)
+        shapes.push({
+          key: `pick-${highlightIbge}`,
+          d: p.path(f) ?? '',
+          kind: 'pick',
+          color: v?.color ? candFill(v.color) : 'var(--text)',
+        });
     }
     if (hover && !touch) {
       const f = hover.kind === 'state' ? stateFeatures.current.get(hover.id) : findMun(hover.id);
@@ -828,6 +830,10 @@ export function BrazilMap(props: Props) {
         }}
       >
         <defs>
+          <pattern id="candidate-missing" width="7" height="7" patternUnits="userSpaceOnUse">
+            <rect width="7" height="7" fill="#55565e" />
+            <path d="M-1,1L1,-1M0,7L7,0M6,8L8,6" stroke="#a1a1aa" strokeOpacity=".55" strokeWidth="1" />
+          </pattern>
           <pattern ref={hatchRef} id="map-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <rect width="6" height="6" style={{ fill: 'var(--map-error)' }} />
             <line x1="0" y1="0" x2="0" y2="6" style={{ stroke: 'rgb(255 255 255 / 0.07)' }} strokeWidth="1.2" />
@@ -838,7 +844,14 @@ export function BrazilMap(props: Props) {
             <stop offset="0.7" style={{ stopColor: 'var(--map-loading)' }} />
             <stop offset="1" style={{ stopColor: 'var(--map-loading-hi)' }} />
             {!reduced && (
-              <animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="840 320" dur="3.2s" repeatCount="indefinite" />
+              <animateTransform
+                attributeName="gradientTransform"
+                type="translate"
+                from="0 0"
+                to="840 320"
+                dur="3.2s"
+                repeatCount="indefinite"
+              />
             )}
           </linearGradient>
         </defs>
@@ -862,9 +875,8 @@ export function BrazilMap(props: Props) {
       )}
 
       {touch ? (
-        tap && info && (
-          <MapTooltip info={info} awaiting={awaiting} onClose={() => setTap(null)} docked style={{ top: props.insets.top + 4 }} />
-        )
+        tap &&
+        info && <MapTooltip info={info} awaiting={awaiting} onClose={() => setTap(null)} docked style={{ top: props.insets.top + 4 }} />
       ) : (
         <MapTooltip ref={tipRef} info={info} awaiting={awaiting} />
       )}

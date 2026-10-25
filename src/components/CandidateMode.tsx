@@ -1,3 +1,4 @@
+import { CandidateAvatar } from './CandidateAvatar';
 import type { CandidateRow, ParsedResult } from '../lib/tse/types';
 import { heatColor } from '../lib/ui/candidate';
 import { titleCase, fmtPct } from '../lib/ui/format';
@@ -29,10 +30,14 @@ export function CandidatePanel({
   data,
   regions,
   onFly,
+  total,
+  unit,
 }: {
   pick: CandidatePick;
   data: ParsedResult | null;
   regions: { id: string; name: string; candidates?: CandidateRow[] }[];
+  total: number;
+  unit: 'UFs' | 'municípios';
   onFly: (id: string) => void;
 }) {
   const c = pick.candidate;
@@ -53,7 +58,8 @@ export function CandidatePanel({
     .sort((a, b) => b.row.percent - a.row.percent);
   return (
     <div className="space-y-3 text-small">
-      <div className="flex flex-wrap items-baseline gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <CandidateAvatar candidate={c} electionId={pick.electionId} photoUf={pick.uf} size={36} />
         <strong>
           {titleCase(c.shortName)} · {c.party} {c.number}
         </strong>
@@ -70,7 +76,9 @@ export function CandidatePanel({
         )}
       </div>
       <p className="text-caption text-ink-3">
-        Lidera em {rows.filter((r) => r.rank === 1).length} de {rows.length} regiões com dados carregados
+        Lidera em {rows.filter((r) => r.rank === 1 && r.candidates?.filter((x) => x.votes === r.row.votes).length === 1).length} de {total}{' '}
+        {unit}
+        {regions.filter((r) => r.candidates).length < total && ` (${regions.filter((r) => r.candidates).length} de ${total} carregados)`}
       </p>
       <div className="grid grid-cols-2 gap-4">
         {[
