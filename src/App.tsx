@@ -7,6 +7,7 @@ import { LoadingScreen } from './components/LoadingScreen';
 import { MunicipalitySearch } from './components/MunicipalitySearch';
 import { OfficeTabs } from './components/OfficeTabs';
 import { StatsGrid } from './components/StatsGrid';
+import { TextScramble } from './components/TextScramble';
 import { ThemeToggle } from './components/ThemeToggle';
 import { GOV_RUNOFF_UFS, UF_LIST } from './lib/tse/config';
 import { buildResultPath } from './lib/tse/client';
@@ -34,6 +35,7 @@ export default function App() {
   const [ufSlug, setUfSlug] = useState<string | null>(null);
   const [mun, setMun] = useState<{ tse: string; name: string; uf: string } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
 
   const ufMeta = UF_LIST.find((u) => u.slug === ufSlug);
   const scope: 'br' | 'uf' | 'mu' =
@@ -91,8 +93,21 @@ export default function App() {
   const initialLoad = loading && !data;
 
   useEffect(() => {
+    if (!headerRef.current) return;
+    gsap.fromTo(
+      headerRef.current,
+      { y: -8, opacity: 0 },
+      { y: 0, opacity: 1, duration: 0.6, ease: 'power2.out', delay: 0.15 },
+    );
+  }, []);
+
+  useEffect(() => {
     if (!panelRef.current) return;
-    gsap.fromTo(panelRef.current, { x: 24, opacity: 0 }, { x: 0, opacity: 1, duration: 0.5, ease: 'power2.out' });
+    gsap.fromTo(
+      panelRef.current,
+      { y: 12, opacity: 0 },
+      { y: 0, opacity: 1, duration: 0.45, ease: 'power2.out' },
+    );
   }, [level, scopeCode, officeId]);
 
   const goCountry = () => {
@@ -123,26 +138,33 @@ export default function App() {
   const maxVotes = data?.candidates[0]?.votes ?? 1;
 
   return (
-    <div className="min-h-screen bg-[var(--color-surface)]">
+    <div className="app-shell min-h-screen">
       <LoadingScreen visible={initialLoad} />
-      <header className="border-b border-[var(--color-border)] bg-[var(--color-surface-elevated)]/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.2em] text-[var(--color-muted)]">
+      <header
+        ref={headerRef}
+        className="border-b border-[var(--color-border)] bg-[var(--color-surface-elevated)]/85 backdrop-blur-md"
+      >
+        <div className="mx-auto flex max-w-6xl flex-col gap-5 px-[var(--spacing-page-x)] py-6 sm:flex-row sm:items-end sm:justify-between sm:px-8">
+          <div className="space-y-2">
+            <div className="label-mono label-accent flex items-center gap-2">
+              <span className="live-dot" aria-hidden />
               Apuração oficial · TSE
-            </p>
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Eleições 2026
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-ink)] sm:text-[1.75rem]">
+              <TextScramble text="Eleições 2026" playOnMount={!initialLoad} />
             </h1>
+            <p className="max-w-md text-sm text-[var(--color-muted)]">
+              Mapa interativo e números em tempo real, direto do CDN do tribunal.
+            </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <MunicipalitySearch items={munIndex} onPick={onSearchPick} />
             <ThemeToggle />
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+      <main className="mx-auto max-w-6xl px-[var(--spacing-page-x)] py-8 sm:px-8">
         <OfficeTabs
           round={round}
           officeId={officeId}
@@ -155,40 +177,47 @@ export default function App() {
           }}
         />
 
-        <nav className="mt-4 flex flex-wrap items-center gap-2 text-sm text-[var(--color-muted)]" aria-label="Navegação">
-          <button type="button" onClick={goCountry} className="hover:text-[var(--color-ink)]">
-            Brasil
+        <nav
+          className="mt-6 flex flex-wrap items-center gap-1.5 font-mono text-xs text-[var(--color-muted)]"
+          aria-label="Navegação"
+        >
+          <button type="button" onClick={goCountry} className="transition hover:text-[var(--color-accent)]">
+            brasil
           </button>
           {ufSlug && (
             <>
-              <span>/</span>
-              <button type="button" onClick={() => goState(ufSlug)} className="hover:text-[var(--color-ink)]">
-                {ufMeta?.name ?? ufSlug.toUpperCase()}
+              <span className="opacity-40">/</span>
+              <button
+                type="button"
+                onClick={() => goState(ufSlug)}
+                className="transition hover:text-[var(--color-accent)]"
+              >
+                {ufMeta?.sigla.toLowerCase() ?? ufSlug}
               </button>
             </>
           )}
           {mun && (
             <>
-              <span>/</span>
-              <span className="text-[var(--color-ink)]">{mun.name}</span>
+              <span className="opacity-40">/</span>
+              <span className="text-[var(--color-ink)]">{mun.name.toLowerCase()}</span>
             </>
           )}
         </nav>
 
         {officeId === '3' && scope === 'br' && round === 2 && (
-          <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-            Governador não tem resultado nacional. Clique em um estado com 2º turno no mapa ou use a busca.
+          <div className="mt-6 panel-muted border-[var(--color-accent)]/25 px-4 py-3 text-sm text-[var(--color-ink-secondary)]">
+            Governador não tem resultado nacional no 2º turno. Selecione um estado com segundo turno no mapa ou use a busca.
           </div>
         )}
 
         {error && (
-          <div className="mt-6 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+          <div className="mt-6 rounded-xl border border-red-500/35 bg-red-500/8 px-4 py-3 text-sm text-red-800 dark:text-red-300">
             {error}
           </div>
         )}
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <section>
+        <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+          <section className="space-y-3">
             <BrazilMap
               level={level === 'country' ? 'country' : 'state'}
               ufSlug={ufSlug ?? undefined}
@@ -198,24 +227,24 @@ export default function App() {
               onSelectState={goState}
               onSelectMunicipality={goMunicipality}
             />
-            <p className="mt-2 text-xs text-[var(--color-muted)]">
-              Cores por candidato líder; intensidade conforme a margem. Dados: resultados.tse.jus.br.
+            <p className="label-mono px-1 normal-case tracking-normal text-[var(--color-muted)]">
+              Cores = líder · intensidade = margem · fonte resultados.tse.jus.br
             </p>
           </section>
 
-          <aside ref={panelRef} className="space-y-4">
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-lg font-semibold">{scopeLabel}</h2>
-                  <p className="text-xs text-[var(--color-muted)]">
-                    Atualizado{' '}
-                    {data ? formatBrasilia(data.updatedAt) : loading ? '…' : '—'}{' '}
-                    (Horário de Brasília)
+          <aside ref={panelRef}>
+            <div className="panel p-5 sm:p-6">
+              <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border-subtle)] pb-4">
+                <div className="min-w-0">
+                  <p className="label-mono">recorte</p>
+                  <h2 className="mt-1 truncate text-xl font-semibold tracking-tight">{scopeLabel}</h2>
+                  <p className="mt-1 font-mono text-[11px] text-[var(--color-muted)]">
+                    atualizado{' '}
+                    {data ? formatBrasilia(data.updatedAt) : loading ? '…' : '—'} · Brasília
                   </p>
                   {data?.finished && (
-                    <span className="mt-1 inline-block rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                      Totalização final
+                    <span className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                      totalização final
                     </span>
                   )}
                 </div>
@@ -225,20 +254,23 @@ export default function App() {
               </div>
 
               {!summaryEnabled && (
-                <p className="mt-4 text-sm text-[var(--color-muted)]">Selecione um estado para ver o painel.</p>
+                <p className="mt-5 text-sm text-[var(--color-muted)]">
+                  Selecione um estado no mapa para abrir o painel deste cargo.
+                </p>
               )}
 
               {summaryEnabled && loading && !data && (
-                <div className="mt-4 space-y-3">
-                  {[1, 2].map((i) => (
-                    <div key={i} className="h-24 rounded-xl skeleton" />
+                <div className="mt-5 space-y-2">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-[72px] skeleton" />
                   ))}
                 </div>
               )}
 
               {data && (
                 <>
-                  <div className="mt-4 space-y-3">
+                  <p className="label-mono mt-5">candidatos · clique para detalhes</p>
+                  <div className="mt-3 space-y-2">
                     {data.candidates.map((c, i) => (
                       <CandidateCard
                         key={c.sqcand}
@@ -247,15 +279,16 @@ export default function App() {
                         photoUf={photoUf}
                         maxVotes={maxVotes}
                         index={i}
+                        defaultOpen={i === 0}
                       />
                     ))}
                   </div>
                   {data.candidates.every((c) => c.votes === 0) && (
-                    <p className="mt-3 text-sm text-[var(--color-muted)]">
-                      Apuração ainda não iniciada ou zerada neste recorte. Os números aparecem conforme o TSE publica.
+                    <p className="mt-4 text-sm text-[var(--color-muted)]">
+                      Apuração ainda não iniciada neste recorte. Os números aparecem conforme o TSE publica.
                     </p>
                   )}
-                  <div className="mt-6">
+                  <div className="mt-6 border-t border-[var(--color-border-subtle)] pt-5">
                     <StatsGrid turnout={data.turnout} />
                   </div>
                 </>
@@ -265,8 +298,10 @@ export default function App() {
         </div>
       </main>
 
-      <footer className="mx-auto max-w-7xl px-4 pb-10 pt-4 text-center text-xs text-[var(--color-muted)] sm:px-6">
-        Fonte: Tribunal Superior Eleitoral (dados públicos). Projeto independente, sem vínculo com o TSE.
+      <footer className="mx-auto max-w-6xl px-[var(--spacing-page-x)] pb-12 pt-6 text-center sm:px-8">
+        <p className="font-mono text-[11px] text-[var(--color-muted)]">
+          Dados públicos do TSE · projeto independente, sem vínculo institucional
+        </p>
       </footer>
     </div>
   );

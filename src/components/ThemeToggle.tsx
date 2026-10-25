@@ -21,10 +21,10 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={() => setDark((d) => !d)}
-      className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition hover:text-[var(--color-ink)]"
-      aria-label="Alternar tema"
+      className="btn-ghost"
+      aria-label="Alternar tema claro e escuro"
     >
-      {dark ? 'Claro' : 'Escuro'}
+      {dark ? 'Tema claro' : 'Tema escuro'}
     </button>
   );
 }

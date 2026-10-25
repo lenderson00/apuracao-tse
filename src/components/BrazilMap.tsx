@@ -21,7 +21,9 @@ interface Props {
 function mixColor(hex: string, amount: number): string {
   const c = d3.color(hex);
   if (!c) return hex;
-  return c.brighter(amount).formatHex();
+  const darker = d3.color(hex)?.darker(0.35);
+  if (!amount || !darker) return c.formatHex();
+  return d3.interpolateRgb(darker, c)(Math.min(1, amount / 1.4)).toString();
 }
 
 export function BrazilMap({
@@ -99,14 +101,14 @@ export function BrazilMap({
         if (level === 'country') {
           const sigla = (features[i].properties as { sigla?: string })?.sigla?.toLowerCase();
           const lead = sigla ? stateLeaders[sigla] : undefined;
-          return mixColor(lead?.leaderColor ?? '#52525b', lead?.margin ? Math.min(1.2, lead.margin / 15) : 0);
+          return mixColor(lead?.leaderColor ?? '#5c5a56', lead?.margin ? Math.min(1, lead.margin / 18) : 0);
         }
         const ibge = String((features[i].properties as { id?: string })?.id ?? '');
         const lead = munLeaders?.[ibge];
-        return mixColor(lead?.leaderColor ?? '#3f3f46', lead?.margin ? Math.min(1.4, lead.margin / 12) : 0);
+        return mixColor(lead?.leaderColor ?? '#4a4844', lead?.margin ? Math.min(1, lead.margin / 14) : 0);
       })
       .attr('stroke', 'var(--color-border)')
-      .attr('stroke-width', level === 'country' ? 0.8 : 0.35)
+      .attr('stroke-width', level === 'country' ? 0.75 : 0.4)
       .attr('opacity', 0)
       .on('mousemove', (event, d) => {
         const props = d.properties as Record<string, string>;
@@ -137,8 +139,8 @@ export function BrazilMap({
 
     gsap.to(paths.nodes(), {
       opacity: 1,
-      duration: 0.6,
-      stagger: 0.015,
+      duration: 0.55,
+      stagger: 0.012,
       ease: 'power2.out',
     });
   }, [geo, pathGen, level, stateLeaders, munLeaders, onSelectState, onSelectMunicipality]);
@@ -147,41 +149,48 @@ export function BrazilMap({
     if (!gRef.current) return;
     gsap.fromTo(
       gRef.current,
-      { scale: 0.92, opacity: 0 },
-      { scale: 1, opacity: 1, duration: 0.7, ease: 'power3.out' },
+      { scale: 0.96, opacity: 0 },
+      { scale: 1, opacity: 1, duration: 0.65, ease: 'power3.out' },
     );
   }, [level, ufSlug]);
 
   return (
-    <div className="relative w-full overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)]">
+    <div className="panel relative w-full overflow-hidden">
+      <div className="flex items-center justify-between border-b border-[var(--color-border-subtle)] px-4 py-3">
+        <p className="label-mono">
+          {level === 'country' ? 'mapa · brasil' : `mapa · ${ufSlug?.toUpperCase() ?? 'UF'}`}
+        </p>
+        {level === 'state' && munProgress < 100 && (
+          <p className="font-mono text-[10px] text-[var(--color-muted)]">
+            {munProgress}% municípios
+          </p>
+        )}
+      </div>
       {level === 'state' && munProgress < 100 && (
-        <div className="absolute left-4 right-4 top-3 z-10">
-          <div className="h-1 overflow-hidden rounded-full bg-[var(--color-border)]">
+        <div className="absolute left-4 right-4 top-12 z-10">
+          <div className="h-px overflow-hidden rounded-full bg-[var(--color-border)]">
             <div
               className="h-full bg-[var(--color-accent)] transition-all duration-300"
               style={{ width: `${munProgress}%` }}
             />
           </div>
-          <p className="mt-1 text-[10px] text-[var(--color-muted)]">
-            Carregando municípios… {munProgress}%
-          </p>
         </div>
       )}
       <svg ref={svgRef} width={size.w} height={size.h} className="mx-auto block max-w-full">
         <g ref={gRef} transform="translate(12,12)" />
       </svg>
       {!geo && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="h-32 w-full max-w-md skeleton rounded-xl" />
+        <div className="absolute inset-0 flex items-center justify-center bg-[var(--color-surface-elevated)]/80">
+          <div className="h-40 w-3/4 max-w-md skeleton" />
         </div>
       )}
       {tooltip && (
         <div
-          className="pointer-events-none absolute z-20 max-w-[200px] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-xs shadow-lg"
+          className="pointer-events-none absolute z-20 max-w-[220px] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-xs shadow-lg"
           style={{ left: tooltip.x + 12, top: tooltip.y + 12 }}
         >
           <p className="font-semibold">{tooltip.title}</p>
-          {tooltip.sub && <p className="text-[var(--color-muted)]">{tooltip.sub}</p>}
+          {tooltip.sub && <p className="mt-0.5 font-mono text-[10px] text-[var(--color-muted)]">{tooltip.sub}</p>}
         </div>
       )}
     </div>

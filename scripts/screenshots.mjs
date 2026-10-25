@@ -1,21 +1,17 @@
 import { chromium } from 'playwright';
-import { mkdir } from 'node:fs/promises';
+import { copyFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const base = 'http://127.0.0.1:4321';
 const out = '/opt/cursor/artifacts/screenshots';
+const docs = join(process.cwd(), 'docs');
 await mkdir(out, { recursive: true });
+await mkdir(docs, { recursive: true });
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
 
 async function clickUf(sigla) {
-  await page.evaluate((uf) => {
-    const paths = [...document.querySelectorAll('path.map-region')];
-    const features = paths;
-    // Match by firing click on path - we stored sigla in feature properties only in d3 data, not DOM
-    // Use bbox: find path whose centroid label matches - instead click via script reading last rendered titles
-    return null;
-  }, sigla);
   const box = await page.locator('svg').boundingBox();
   if (!box) return;
   const coords = {
@@ -48,5 +44,16 @@ await clickUf('sp');
 await page.waitForTimeout(3500);
 await page.screenshot({ path: `${out}/mobile-state.png`, fullPage: true });
 
+const names = [
+  'desktop-main.png',
+  'desktop-state.png',
+  'desktop-municipality.png',
+  'mobile-main.png',
+  'mobile-state.png',
+];
+for (const name of names) {
+  await copyFile(`${out}/${name}`, join(docs, name));
+}
+
 await browser.close();
-console.log('Saved screenshots to', out);
+console.log('Saved screenshots to', out, 'and', docs);
