@@ -9,6 +9,7 @@
  */
 import { TSE_BASE, fetchJson } from './client';
 import { decodeBoletim, type BoletimUrna } from './bu';
+import { isNotPublished, tseBuffer } from './net';
 import type { Round } from './types';
 
 /** Pleito de 2026 por turno (ele-c.json: 3220 = 04/10, 3221 = 25/10). */
@@ -47,7 +48,7 @@ export function fetchSectionIndex(round: Round, uf: string): Promise<SectionInde
   const key = `${round}|${uf}`;
   let p = indexCache.get(key);
   if (!p) {
-    p = fetchJson<CsFile>(sectionIndexUrl(round, uf)).then((raw) => {
+    p = fetchJson<CsFile>(sectionIndexUrl(round, uf), { priority: 0 }).then((raw) => {
       const idx: SectionIndex = new Map();
       for (const a of raw.abr ?? []) {
         for (const mu of a.mu ?? []) {
@@ -101,10 +102,13 @@ export async function fetchSectionFiles(
   zona: string,
   secao: string,
 ): Promise<SectionFiles | null> {
-  const res = await fetch(sectionAuxUrl(round, uf, mun, zona, secao), { headers: { Accept: 'application/json' } });
-  if (res.status === 404 || res.status === 403) return null;
-  if (!res.ok) throw new Error(`TSE ${res.status}`);
-  const aux = (await res.json()) as AuxFile;
+  let aux: AuxFile;
+  try {
+    aux = await fetchJson<AuxFile>(sectionAuxUrl(round, uf, mun, zona, secao), { priority: 0 });
+  } catch (e) {
+    if (isNotPublished(e)) return null;
+    throw e;
+  }
   const hashes = aux.hashes ?? [];
   // o TSE pode listar mais de um envio; vale o totalizado, senão o mais recente
   const h = hashes.find((x) => /totaliz/i.test(x.st)) ?? hashes[hashes.length - 1];
@@ -122,10 +126,7 @@ const buCache = new Map<string, Promise<BoletimUrna>>();
 export function fetchBoletim(url: string): Promise<BoletimUrna> {
   let p = buCache.get(url);
   if (!p) {
-    p = fetch(url).then(async (res) => {
-      if (!res.ok) throw new Error(`TSE ${res.status}`);
-      return decodeBoletim(await res.arrayBuffer());
-    });
+    p = tseBuffer(url, { priority: 0 }).then(decodeBoletim);
     p.catch(() => buCache.delete(url));
     buCache.set(url, p);
   }

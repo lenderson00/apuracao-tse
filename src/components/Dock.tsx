@@ -9,6 +9,7 @@ import { hasStarted } from '../lib/ui/turnout';
 import { CandidateAvatar } from './CandidateAvatar';
 import { Evolution } from './Evolution';
 import { StatusPill } from './Status';
+import { NetNotice } from './NetNotice';
 import { Icon } from './ui/Icon';
 import { Int, Pct } from './ui/Num';
 import { Skeleton } from './ui/Skeleton';
@@ -29,6 +30,8 @@ interface Props {
   stale: boolean;
   loading: boolean;
   error: string | null;
+  /** a última atualização falhou; os números mostrados são da consulta anterior */
+  outdated?: boolean;
   onRetry: () => void;
   photoUf: string;
   majority: boolean;
@@ -270,6 +273,7 @@ function MobileSheet({
             {data && <span className="shrink-0 font-mono text-nano text-ink-3">{fmtUpdatedAt(data.updatedAt)}</span>}
           </div>
         )}
+        <NetNotice outdated={props.outdated} className="mt-1" />
         <div className="mt-2.5">
           {alt ??
             (!data ? (
@@ -340,7 +344,7 @@ function Summary(props: Props) {
 
 /* -------------------------------------------------------------- cabeçalho */
 
-function Header({ kindLabel, title, context, data, loading, stale, tabs }: Props & { tabs?: ReactNode }) {
+function Header({ kindLabel, title, context, data, loading, stale, outdated, tabs }: Props & { tabs?: ReactNode }) {
   return (
     <header className="flex min-w-0 items-center gap-3">
       <span className="eyebrow shrink-0">{kindLabel}</span>
@@ -355,6 +359,7 @@ function Header({ kindLabel, title, context, data, loading, stale, tabs }: Props
             <span className="size-1.5 animate-pulse rounded-full bg-accent" /> atualizando
           </span>
         )}
+        {!stale && <NetNotice outdated={outdated} />}
         <span>{context}</span>
         {data && (
           <>
@@ -381,7 +386,7 @@ function ErrorState({ title, onRetry, compact }: { title: string; onRetry: () =>
       <div className="min-w-0 flex-1">
         <p className="text-small font-medium text-ink">Não deu para buscar os números de {title} agora.</p>
         <p className="text-caption text-ink-3">
-          O TSE pode estar lento. Escondemos os números antigos para não confundir. A página tenta de novo sozinha a cada minuto.
+          O TSE pode estar lento ou limitando acessos. A página tenta de novo sozinha.
         </p>
       </div>
       <button type="button" className="btn btn-solid shrink-0" onClick={onRetry}>

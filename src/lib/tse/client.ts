@@ -1,8 +1,9 @@
 import type { OfficeId, Round, TseMunConfig, TseResultFile } from './types';
 import { officeForRound } from './config';
+import { TSE_ORIGIN, tseJson, type TseFetchOptions } from './net';
 
-/** TSE não envia CORS; use `/api/tse` (proxy Vite local ou rewrite na Vercel). */
-export const TSE_BASE = '/api/tse';
+/** O TSE libera CORS: buscamos direto. O proxy `/api/tse` (Vercel) fica só de reserva, em net.ts. */
+export const TSE_BASE = TSE_ORIGIN;
 
 export function resultUrl(params: {
   electionId: string;
@@ -24,10 +25,8 @@ export function photoUrl(electionId: string, uf: string, sqcand: string): string
   return `${TSE_BASE}/oficial/ele2026/${electionId}/fotos/${uf}/${sqcand}.jpeg`;
 }
 
-export async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`TSE ${res.status}: ${url}`);
-  return res.json() as Promise<T>;
+export function fetchJson<T>(url: string, opts?: TseFetchOptions): Promise<T> {
+  return tseJson<T>(url, opts);
 }
 
 export function buildResultPath(
@@ -65,6 +64,7 @@ export async function fetchResult(
   officeId: OfficeId,
   scope: 'br' | 'uf' | 'mu',
   code: string,
+  opts?: TseFetchOptions,
 ): Promise<TseResultFile> {
   const path = buildResultPath(round, officeId, scope, code);
   if (!path) throw new Error('Cargo indisponível neste turno');
@@ -74,14 +74,17 @@ export async function fetchResult(
     fileStem: path.fileStem,
     officeId,
   });
-  return fetchJson<TseResultFile>(url);
+  return fetchJson<TseResultFile>(url, opts);
 }
 
 let munCache: Promise<TseMunConfig> | null = null;
 
 export function fetchMunicipalityIndex(electionId: string): Promise<TseMunConfig> {
   if (!munCache) {
-    munCache = fetchJson<TseMunConfig>(munConfigUrl(electionId));
+    munCache = fetchJson<TseMunConfig>(munConfigUrl(electionId), { priority: 0 });
+    munCache.catch(() => {
+      munCache = null;
+    });
   }
   return munCache;
 }
@@ -106,5 +109,5 @@ export async function fetchZoneResult(
 ): Promise<TseResultFile> {
   const office = officeForRound(officeId, round);
   if (!office) throw new Error('Cargo indisponível neste turno');
-  return fetchJson<TseResultFile>(zoneResultUrl(office.electionCode(round), ufSlug, munTse, zona, officeId));
+  return fetchJson<TseResultFile>(zoneResultUrl(office.electionCode(round), ufSlug, munTse, zona, officeId), { priority: 2 });
 }

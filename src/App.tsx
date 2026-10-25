@@ -29,6 +29,7 @@ import { municipalitiesForUf, useMunicipalityIndex } from './hooks/useMunicipali
 import { useMunicipalityResults, type MunLeader } from './hooks/useMunicipalityResults';
 import { useStateLeaders, type StateLeader } from './hooks/useStateLeaders';
 import { GOV_RUNOFF_UFS, OFFICES, ROUND_OPTIONS, UF_LIST } from './lib/tse/config';
+import { isFinalElection } from './lib/tse/net';
 import type { MunicipalityRef, OfficeId, ParsedResult, Round } from './lib/tse/types';
 import { candFill } from './lib/ui/color';
 import { fmtPct, titleCase } from './lib/ui/format';
@@ -95,15 +96,22 @@ export default function App() {
     reloadStatesRef.current = reloadStates;
     reloadMunsRef.current = reloadMuns;
   }, [reloadStates, reloadMuns]);
+  // 1º turno é final: nada de polling. 2º turno: estados a cada 2 min, municípios a cada 3 min.
+  const finalRound = isFinalElection(office.electionCode(round));
   useEffect(() => {
-    const id = window.setInterval(() => void reloadStatesRef.current(), STATE_POLL_MS);
+    if (finalRound) return;
+    const id = window.setInterval(() => {
+      if (!document.hidden) void reloadStatesRef.current();
+    }, STATE_POLL_MS);
     return () => window.clearInterval(id);
-  }, [round, officeId]);
+  }, [round, officeId, finalRound]);
   useEffect(() => {
-    if (!focusUf) return;
-    const id = window.setInterval(() => void reloadMunsRef.current(), MUN_POLL_MS);
+    if (!focusUf || finalRound) return;
+    const id = window.setInterval(() => {
+      if (!document.hidden) void reloadMunsRef.current();
+    }, MUN_POLL_MS);
     return () => window.clearInterval(id);
-  }, [focusUf, round, officeId]);
+  }, [focusUf, round, officeId, finalRound]);
 
   /* ------------------------------------------------- recorte mostrado no dock */
   const activeMun = pinned ?? (focusUf && level === 'mun' ? (hoverMun ?? zoomMun) : null);
@@ -534,6 +542,7 @@ export default function App() {
       stale={stale}
       loading={q.loading}
       error={q.error}
+      outdated={q.outdated}
       onRetry={() => void q.refresh()}
       photoUf={photoUf}
       majority={officeId === '1' || officeId === '3'}

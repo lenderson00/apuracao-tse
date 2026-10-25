@@ -31,19 +31,24 @@ export function useStateLeaders(round: Round, officeId: OfficeId, enabled: boole
   const load = useCallback(async () => {
     if (!enabled) return;
     setLoading(true);
-    const base: Record<string, StateLeader> = {};
-    for (const uf of UF_LIST) {
-      base[uf.slug] = {
-        slug: uf.slug,
-        sigla: uf.sigla,
-        name: uf.name,
-        leaderColor: '#3f3f46',
-        leaderPct: 0,
-        margin: 0,
-        loading: true,
-      };
-    }
-    setMap(base);
+    // recarregar mantém o que já temos (o mapa segue com a última cor conhecida)
+    setMap((prev) => {
+      const base: Record<string, StateLeader> = {};
+      for (const uf of UF_LIST) {
+        base[uf.slug] = prev[uf.slug]
+          ? { ...prev[uf.slug], loading: true }
+          : {
+              slug: uf.slug,
+              sigla: uf.sigla,
+              name: uf.name,
+              leaderColor: '#3f3f46',
+              leaderPct: 0,
+              margin: 0,
+              loading: true,
+            };
+      }
+      return base;
+    });
 
     await Promise.all(
       UF_LIST.map(async (uf) => {
@@ -55,7 +60,7 @@ export function useStateLeaders(round: Round, officeId: OfficeId, enabled: boole
           return;
         }
         try {
-          const raw = await fetchResult(round, officeId, 'uf', uf.slug);
+          const raw = await fetchResult(round, officeId, 'uf', uf.slug, { priority: 1 });
           const parsed = parseResult(raw, { round, officeId, scopeLabel: uf.name });
           const { leader: lead, margin, reason } = resolveMapLeader(parsed.candidates);
           setMap((prev) => ({
@@ -74,9 +79,12 @@ export function useStateLeaders(round: Round, officeId: OfficeId, enabled: boole
             },
           }));
         } catch {
+          // falhou: se já havia números, eles continuam valendo; senão, "sem resposta"
           setMap((prev) => ({
             ...prev,
-            [uf.slug]: { ...prev[uf.slug], loading: false, leaderColor: '#27272a' },
+            [uf.slug]: prev[uf.slug]?.candidates
+              ? { ...prev[uf.slug], loading: false }
+              : { ...prev[uf.slug], loading: false, leaderColor: '#27272a' },
           }));
         }
       }),

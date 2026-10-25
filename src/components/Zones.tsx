@@ -352,10 +352,7 @@ function Boletim({
   const nominal = office?.votes.filter((v) => v.kind === 'nominal').sort((a, b) => b.votes - a.votes) ?? [];
   const valid = nominal.reduce((sum, v) => sum + v.votes, 0);
   const pct = (n: number, total: number) => (total ? (n / total) * 100 : 0);
-  const original = (url || sectionAuxUrl(round, m.uf.toLowerCase(), m.tseCode, zone, section)).replace(
-    '/api/tse',
-    'https://resultados.tse.jus.br',
-  );
+  const original = url || sectionAuxUrl(round, m.uf.toLowerCase(), m.tseCode, zone, section);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-nano">

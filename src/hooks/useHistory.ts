@@ -6,6 +6,9 @@ import { useEffect, useState } from 'react';
  */
 export const HISTORY_BASE = 'https://raw.githubusercontent.com/lenderson00/apuracao-dados/main/history';
 const POLL_MS = 120_000;
+const BUCKET_MS = 5 * 60_000;
+/** novas tentativas depois de uma falha (ms, com jitter) */
+const RETRY_MS = [5_000, 15_000, 45_000];
 
 export interface HistoryCandidate {
   n: string;
@@ -36,16 +39,28 @@ export function useHistory(key: string | null) {
   useEffect(() => {
     if (!key) return;
     let alive = true;
+    const ctrl = new AbortController();
     const load = async () => {
-      try {
-        const v = Math.floor(Date.now() / POLL_MS);
-        const res = await fetch(`${HISTORY_BASE}/${key}.json?v=${v}`, { cache: 'no-store' });
-        if (!res.ok) throw new Error(String(res.status));
-        const file = (await res.json()) as HistoryFile;
-        if (alive) setState({ key, file, error: false });
-      } catch {
-        if (alive) setState((s) => (s.key === key ? { ...s, error: true } : { key, file: null, error: true }));
+      // cache-buster muda no máximo a cada 5 min: o raw do GitHub e o navegador conseguem cachear
+      const v = Math.floor(Date.now() / BUCKET_MS);
+      const url = `${HISTORY_BASE}/${key}.json?v=${v}`;
+      for (let attempt = 0; attempt <= RETRY_MS.length; attempt++) {
+        try {
+          const res = await fetch(url, { signal: ctrl.signal, priority: 'high' } as RequestInit);
+          if (!res.ok) throw new Error(String(res.status));
+          const file = (await res.json()) as HistoryFile;
+          if (alive) setState({ key, file, error: false });
+          return;
+        } catch (e) {
+          if (!alive || (e as Error)?.name === 'AbortError') return;
+          if (attempt < RETRY_MS.length) {
+            await new Promise((r) => window.setTimeout(r, RETRY_MS[attempt] * (0.75 + Math.random() * 0.5)));
+            if (!alive) return;
+          }
+        }
       }
+      // falhou: mantém a última série boa, se houver
+      if (alive) setState((s) => (s.key === key ? { ...s, error: true } : { key, file: null, error: true }));
     };
     void load();
     const id = window.setInterval(() => {
@@ -55,6 +70,7 @@ export function useHistory(key: string | null) {
     document.addEventListener('visibilitychange', onVis);
     return () => {
       alive = false;
+      ctrl.abort();
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVis);
     };

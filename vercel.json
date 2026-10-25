@@ -20,20 +20,85 @@
         },
         {
           "key": "CDN-Cache-Control",
-          "value": "public, s-maxage=30, stale-while-revalidate=60"
+          "value": "public, s-maxage=60, stale-while-revalidate=600, stale-if-error=3600"
         },
         {
           "key": "Cache-Control",
-          "value": "public, max-age=15"
+          "value": "public, max-age=30"
         }
       ]
     },
     {
-      "source": "/api/tse/oficial/ele2026/arquivo-urna/:pleito/config/:uf/:file",
+      "source": "/api/tse/oficial/ele2026/:ele(6257|6259)/:path*",
       "headers": [
         {
           "key": "CDN-Cache-Control",
-          "value": "public, s-maxage=120, stale-while-revalidate=600"
+          "value": "public, s-maxage=86400, stale-while-revalidate=604800, stale-if-error=604800"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    },
+    {
+      "source": "/api/tse/oficial/ele2026/arquivo-urna/3220/:path*",
+      "headers": [
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, s-maxage=86400, stale-while-revalidate=604800, stale-if-error=604800"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    },
+    {
+      "source": "/api/tse/oficial/ele2026/:ele(6258|6260)/:path*",
+      "headers": [
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, s-maxage=60, stale-while-revalidate=600, stale-if-error=3600"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=30"
+        }
+      ]
+    },
+    {
+      "source": "/api/tse/oficial/comum/config/:path*",
+      "headers": [
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, s-maxage=21600, stale-while-revalidate=86400, stale-if-error=604800"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    },
+    {
+      "source": "/api/tse/oficial/ele2026/:ele(\\d+)/config/:file",
+      "headers": [
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, s-maxage=21600, stale-while-revalidate=86400, stale-if-error=604800"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    },
+    {
+      "source": "/api/tse/oficial/ele2026/arquivo-urna/3221/config/:uf/:file",
+      "headers": [
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, s-maxage=120, stale-while-revalidate=600, stale-if-error=3600"
         },
         {
           "key": "Cache-Control",
