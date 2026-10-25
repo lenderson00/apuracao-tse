@@ -44,6 +44,7 @@ export function CandidateAvatar({ candidate, electionId, photoUf, size = 40, rin
           key={src}
           src={src}
           alt=""
+          crossOrigin="anonymous"
           loading="lazy"
           decoding="async"
           onLoad={() => setState('ok')}

@@ -26,7 +26,10 @@ type IconName =
   | 'x-square'
   | 'id'
   | 'menu'
-  | 'clock';
+  | 'clock'
+  | 'share'
+  | 'download'
+  | 'link';
 
 const PATHS: Record<IconName, string> = {
   search: 'M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm10 2-4.35-4.35',
@@ -54,6 +57,9 @@ const PATHS: Record<IconName, string> = {
   id: 'M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Zm4.5 7.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 16a3 3 0 0 1 5 0m3-6h4m-4 3h3',
   menu: 'M4 7h16M4 12h16M4 17h16',
   clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-13v4l2.5 2.5',
+  share: 'M12 15V3m-4 4 4-4 4 4M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7',
+  download: 'M12 3v12m-4-4 4 4 4-4M5 19h14',
+  link: 'M10 14a4.5 4.5 0 0 0 6.36 0l3-3a4.5 4.5 0 0 0-6.36-6.36l-1 1M14 10a4.5 4.5 0 0 0-6.36 0l-3 3a4.5 4.5 0 0 0 6.36 6.36l1-1',
   target: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-5a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-13v3m0 12v3M3 12h3m12 0h3',
 };
 

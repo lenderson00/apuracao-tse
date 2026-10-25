@@ -10,6 +10,7 @@ import { CandidateAvatar } from './CandidateAvatar';
 import { Evolution } from './Evolution';
 import { StatusPill } from './Status';
 import { NetNotice } from './NetNotice';
+import { ShareButton } from './ShareButton';
 import { Icon } from './ui/Icon';
 import { Int, Pct } from './ui/Num';
 import { Skeleton } from './ui/Skeleton';
@@ -265,7 +266,10 @@ function MobileSheet({
               </>
             )}
           </div>
-          <StatusPill data={data} className="shrink-0" />
+          <span className="flex shrink-0 items-center gap-1">
+            <StatusPill data={data} className="shrink-0" />
+            <ShareButton data={data} title={props.title} photoUf={props.photoUf} compact className="-mr-1.5" />
+          </span>
         </div>
         {crumbs && (
           <div className="flex items-baseline justify-between gap-3">
@@ -344,7 +348,7 @@ function Summary(props: Props) {
 
 /* -------------------------------------------------------------- cabeçalho */
 
-function Header({ kindLabel, title, context, data, loading, stale, outdated, tabs }: Props & { tabs?: ReactNode }) {
+function Header({ kindLabel, title, context, data, loading, stale, outdated, tabs, photoUf }: Props & { tabs?: ReactNode }) {
   return (
     <header className="flex min-w-0 items-center gap-3">
       <span className="eyebrow shrink-0">{kindLabel}</span>
@@ -373,6 +377,7 @@ function Header({ kindLabel, title, context, data, loading, stale, outdated, tab
           </>
         )}
       </span>
+      <ShareButton data={data} title={title} photoUf={photoUf} className="-mr-1 h-7 shrink-0" />
     </header>
   );
 }
