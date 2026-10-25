@@ -157,6 +157,8 @@ export interface MapSummary {
   items: LegendItem[];
   neutral: number;
   errors: number;
+  /** áreas sem disputa neste recorte (sem 2º turno) */
+  off: number;
   loading: number;
   total: number;
   unit: 'UF' | 'municípios';
@@ -183,6 +185,7 @@ export function MapPanel({ s, title, bare, className }: { s: MapSummary; title: 
           <Line key={it.key} swatch={candFill(it.color)} label={titleCase(it.name)} value={it.count} strong />
         ))}
         <Line swatch="var(--map-neutral)" label="Sem votos ou empate" value={s.neutral} />
+        {s.off > 0 && <Line swatch="transparent" outline label="Sem 2º turno" value={s.off} />}
         {s.errors > 0 && <Line swatch="url(#legend-hatch)" label="Sem resposta do TSE" value={s.errors} />}
       </dl>
       {s.items.length > 0 && (
@@ -230,11 +233,12 @@ export function MapPanel({ s, title, bare, className }: { s: MapSummary; title: 
   );
 }
 
-function Line({ swatch, label, value, strong }: { swatch: string; label: string; value: number; strong?: boolean }) {
+function Line({ swatch, label, value, strong, outline }: { swatch: string; label: string; value: number; strong?: boolean; outline?: boolean }) {
   return (
     <div className="grid h-6 grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-x-2">
       <svg width="10" height="10" className="rounded-[3px]" aria-hidden>
         <rect width="10" height="10" fill={swatch} />
+        {outline && <rect x="0.5" y="0.5" width="9" height="9" rx="2.5" fill="none" style={{ stroke: 'var(--line-loud)' }} />}
       </svg>
       <dt className={clsx('truncate text-caption', strong ? 'font-medium text-ink' : 'text-ink-2')}>{label}</dt>
       <dd className="tnum text-right font-mono text-micro text-ink-2">{value}</dd>

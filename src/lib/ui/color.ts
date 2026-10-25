@@ -22,10 +22,14 @@ function tone(color: string, l: number, chroma = 1): string {
   return out;
 }
 
-/** Degraus de vantagem (em pontos percentuais) e luminosidade de cada um. */
+/**
+ * Degraus de vantagem (em pontos percentuais). Quanto maior a vantagem, mais
+ * forte a cor: vantagem pequena fica apagada, perto do cinza neutro; vantagem
+ * grande fica viva, com saturação cheia.
+ */
 export const MARGIN_STEPS = [0, 5, 12, 25] as const;
-const STEP_L = [42, 51, 60, 69];
-const STEP_C = [0.82, 0.92, 1, 1];
+const STEP_L = [36, 43, 50, 58];
+const STEP_C = [0.38, 0.62, 0.86, 1.1];
 export const STEP_LABELS = ['até 5 p.p.', '5 a 12 p.p.', '12 a 25 p.p.', 'mais de 25 p.p.'];
 
 export function marginStep(margin: number): number {

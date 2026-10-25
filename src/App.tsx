@@ -298,10 +298,12 @@ export default function App() {
     const views = focusUf ? munInUf.map((m) => munViews[m.ibgeCode]) : UF_LIST.map((u) => stateViews[u.slug]);
     let neutral = 0;
     let errors = 0;
+    let off = 0;
     let loading = 0;
     for (const v of views) {
       if (!v || v.status === 'loading') loading += 1;
       else if (v.status === 'error') errors += 1;
+      else if (v.status === 'off') off += 1;
       else if (v.status === 'neutral') neutral += 1;
       else if (v.leaderName && v.color) {
         const it = counts.get(v.leaderName) ?? { key: v.leaderName, name: v.leaderName, color: v.color, count: 0 };
@@ -314,6 +316,7 @@ export default function App() {
       items,
       neutral,
       errors,
+      off,
       loading,
       total: views.length,
       unit: focusUf ? 'municípios' : 'UF',
