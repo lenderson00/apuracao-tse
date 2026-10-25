@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/tse/(.*)",
+      "destination": "https://resultados.tse.jus.br/$1"
+    }
+  ]
+}

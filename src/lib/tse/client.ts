@@ -1,7 +1,7 @@
 import type { OfficeId, Round, TseMunConfig, TseResultFile } from './types';
 import { officeForRound } from './config';
 
-/** TSE não envia CORS; use proxy `/api/tse` (Vite dev, server.mjs ou edge rewrite). */
+/** TSE não envia CORS; use `/api/tse` (proxy Vite local ou rewrite na Vercel). */
 export const TSE_BASE = '/api/tse';
 
 export function resultUrl(params: {
