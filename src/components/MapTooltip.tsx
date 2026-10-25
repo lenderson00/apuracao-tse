@@ -60,6 +60,7 @@ export function MapTooltip({ info, awaiting, docked, onClose, style, ref }: Prop
 function Body({ view, note, awaiting }: { view?: RegionView; note?: string; awaiting: boolean }) {
   if (note) return <p className="text-caption text-ink-3">{note}</p>;
   if (!view || view.status === 'loading') return <p className="text-caption text-ink-3">Carregando…</p>;
+  if (view.status === 'off') return <p className="text-caption text-ink-3">Sem 2º turno para este cargo</p>;
   if (view.status === 'error') return <p className="text-caption text-ink-3">O TSE não respondeu para esta área.</p>;
   if (view.status === 'neutral')
     return (

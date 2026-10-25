@@ -442,11 +442,13 @@ export function DetailTabs({
   candidate,
   candidateLabel,
   zones,
+  evolution,
 }: {
   result: React.ReactNode;
   candidate?: React.ReactNode;
   candidateLabel?: string;
   zones?: React.ReactNode;
+  evolution?: React.ReactNode;
 }) {
   const [tab, setTab] = useState(candidate ? 'candidate' : 'result');
   return (
@@ -460,10 +462,11 @@ export function DetailTabs({
           { value: 'result', label: 'Resultado' },
           ...(candidate ? [{ value: 'candidate', label: candidateLabel ?? 'Perfil' }] : []),
           ...(zones ? [{ value: 'zones', label: 'Zonas' }] : []),
+          ...(evolution ? [{ value: 'evo', label: 'Evolução' }] : []),
         ]}
       />
       <div className="scroll-y min-h-0 max-h-[42dvh] py-2" data-dock-anim>
-        {tab === 'zones' && zones ? zones : tab === 'candidate' && candidate ? candidate : result}
+        {tab === 'zones' && zones ? zones : tab === 'candidate' && candidate ? candidate : tab === 'evo' && evolution ? evolution : result}
       </div>
     </>
   );

@@ -36,12 +36,21 @@ export function fmtUpdatedAt(raw: string | undefined): string {
 }
 
 /** Nome em caixa alta do TSE → "Flavio Bolsonaro" */
+/** Siglas que o TSE usa como nome de urna e que devem ficar em caixa alta. */
+const ACRONYMS = new Set(['jhc']);
+
 export function titleCase(name: string): string {
   const small = new Set(['da', 'de', 'do', 'das', 'dos', 'e']);
   return name
     .toLocaleLowerCase('pt-BR')
     .split(/\s+/)
-    .map((w, i) => (i > 0 && small.has(w) ? w : w.charAt(0).toLocaleUpperCase('pt-BR') + w.slice(1)))
+    .map((w, i) =>
+      ACRONYMS.has(w)
+        ? w.toLocaleUpperCase('pt-BR')
+        : i > 0 && small.has(w)
+          ? w
+          : w.charAt(0).toLocaleUpperCase('pt-BR') + w.slice(1),
+    )
     .join(' ');
 }
 

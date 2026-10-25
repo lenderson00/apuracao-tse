@@ -2,7 +2,8 @@ import type { MunLeader } from '../../hooks/useMunicipalityResults';
 import type { StateLeader } from '../../hooks/useStateLeaders';
 import { mapFill } from './color';
 
-export type RegionStatus = 'leader' | 'neutral' | 'loading' | 'error';
+/** off: a área não tem disputa neste recorte (ex.: estado sem 2º turno para governador). */
+export type RegionStatus = 'leader' | 'neutral' | 'off' | 'loading' | 'error';
 
 export interface RegionView {
   status: RegionStatus;
@@ -19,6 +20,7 @@ export interface RegionView {
 
 const FILL: Record<Exclude<RegionStatus, 'leader'>, string> = {
   neutral: 'var(--map-neutral)',
+  off: 'transparent',
   loading: 'url(#map-shimmer)',
   error: 'url(#map-hatch)',
 };
@@ -26,6 +28,7 @@ const FILL: Record<Exclude<RegionStatus, 'leader'>, string> = {
 /** Estado → visão do mapa. Sem líder: nota (sem votos/empate) ou falha. */
 export function stateView(s: StateLeader | undefined): RegionView {
   if (!s || s.loading) return { status: 'loading', fill: FILL.loading, pct: 0, margin: 0 };
+  if (s.noRound) return { status: 'off', fill: FILL.off, pct: 0, margin: 0, note: 'Sem 2º turno' };
   if (s.leaderName) {
     return {
       status: 'leader',

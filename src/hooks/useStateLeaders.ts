@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchResult } from '../lib/tse/client';
 import { parseResult, resolveMapLeader } from '../lib/tse/parse';
-import { UF_LIST } from '../lib/tse/config';
+import { GOV_RUNOFF_UFS, UF_LIST } from '../lib/tse/config';
 import type { CandidateRow, OfficeId, Round } from '../lib/tse/types';
 
 /** Cor neutra do mapa quando não há líder (sem votos ou empate). */
@@ -19,6 +19,8 @@ export interface StateLeader {
   /** Texto do tooltip quando não há líder (sem votos ou empate). */
   note?: string;
   candidates?: CandidateRow[];
+  /** Estado sem 2º turno para este cargo (não há o que buscar no TSE). */
+  noRound?: boolean;
   loading: boolean;
 }
 
@@ -45,6 +47,13 @@ export function useStateLeaders(round: Round, officeId: OfficeId, enabled: boole
 
     await Promise.all(
       UF_LIST.map(async (uf) => {
+        if (round === 2 && officeId === '3' && !GOV_RUNOFF_UFS.has(uf.slug)) {
+          setMap((prev) => ({
+            ...prev,
+            [uf.slug]: { ...prev[uf.slug], loading: false, noRound: true, note: 'Sem 2º turno' },
+          }));
+          return;
+        }
         try {
           const raw = await fetchResult(round, officeId, 'uf', uf.slug);
           const parsed = parseResult(raw, { round, officeId, scopeLabel: uf.name });
