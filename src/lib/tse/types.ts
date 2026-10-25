@@ -98,8 +98,13 @@ export interface TseResultFile {
     vv: string;
     vb: string;
     pvb: string;
+    pvbn?: string;
     vn: string;
     pvn: string;
+    /** Total de nulos (nulos + nulos técnicos) e % sobre o total de votos. */
+    tvn?: string;
+    ptvn?: string;
+    ptvnn?: string;
   };
 }
 

@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchResult } from '../lib/tse/client';
-import { leadingCandidate, marginPct, parseResult } from '../lib/tse/parse';
+import { parseResult, resolveMapLeader } from '../lib/tse/parse';
 import { UF_LIST } from '../lib/tse/config';
 import type { OfficeId, Round } from '../lib/tse/types';
+
+/** Cor neutra do mapa quando não há líder (sem votos ou empate). */
+export const NEUTRAL_COLOR = '#52525b';
+export const MAP_NOTE = { 'sem-votos': 'Sem votos apurados', empate: 'Empate' } as const;
 
 export interface StateLeader {
   slug: string;
@@ -12,6 +16,8 @@ export interface StateLeader {
   leaderPct: number;
   margin: number;
   leaderName?: string;
+  /** Texto do tooltip quando não há líder (sem votos ou empate). */
+  note?: string;
   loading: boolean;
 }
 
@@ -41,17 +47,18 @@ export function useStateLeaders(round: Round, officeId: OfficeId, enabled: boole
         try {
           const raw = await fetchResult(round, officeId, 'uf', uf.slug);
           const parsed = parseResult(raw, { round, officeId, scopeLabel: uf.name });
-          const lead = leadingCandidate(parsed.candidates);
+          const { leader: lead, margin, reason } = resolveMapLeader(parsed.candidates);
           setMap((prev) => ({
             ...prev,
             [uf.slug]: {
               slug: uf.slug,
               sigla: uf.sigla,
               name: uf.name,
-              leaderColor: lead?.color ?? '#3f3f46',
+              leaderColor: lead?.color ?? NEUTRAL_COLOR,
               leaderPct: lead?.percent ?? 0,
-              margin: marginPct(parsed.candidates),
+              margin,
               leaderName: lead?.shortName,
+              note: reason ? MAP_NOTE[reason] : undefined,
               loading: false,
             },
           }));

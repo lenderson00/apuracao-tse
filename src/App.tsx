@@ -57,10 +57,12 @@ export default function App() {
         ? ufMeta.name
         : 'Brasil';
 
+  // Só Presidente tem arquivo nacional. Os outros cargos precisam de um estado.
+  const noNationalResult = officeId !== '1' && scope === 'br';
   const summaryEnabled =
     officeId === '1' ||
     (officeId === '3' && scope !== 'br') ||
-    (officeId !== '3' && round === 1);
+    (officeId !== '3' && round === 1 && scope !== 'br');
 
   const { data, error, loading } = useElectionResult(
     round,
@@ -129,7 +131,7 @@ export default function App() {
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-[var(--color-muted)]">
-              Apuração oficial · TSE
+              Dados públicos do TSE
             </p>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
               Eleições 2026
@@ -143,6 +145,18 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+        <p className="mb-4 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-muted)]">
+          Este site é independente e não é do TSE. Os números vêm dos arquivos públicos de{' '}
+          <a
+            href="https://resultados.tse.jus.br"
+            target="_blank"
+            rel="noreferrer"
+            className="underline hover:text-[var(--color-ink)]"
+          >
+            resultados.tse.jus.br
+          </a>
+          . Para o resultado oficial, consulte o TSE.
+        </p>
         <OfficeTabs
           round={round}
           officeId={officeId}
@@ -175,9 +189,11 @@ export default function App() {
           )}
         </nav>
 
-        {officeId === '3' && scope === 'br' && round === 2 && (
+        {noNationalResult && (
           <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-            Governador não tem resultado nacional. Clique em um estado com 2º turno no mapa ou use a busca.
+            {officeId === '3' && round === 2
+              ? 'Governador não tem resultado nacional. Escolha no mapa um estado com 2º turno ou use a busca.'
+              : 'Este cargo não tem resultado nacional. Escolha um estado no mapa ou use a busca.'}
           </div>
         )}
 
@@ -199,7 +215,7 @@ export default function App() {
               onSelectMunicipality={goMunicipality}
             />
             <p className="mt-2 text-xs text-[var(--color-muted)]">
-              Cores por candidato líder; intensidade conforme a margem. Dados: resultados.tse.jus.br.
+              Cor do candidato que lidera em cada área. Cinza: sem votos apurados ou empate. Dados: resultados.tse.jus.br.
             </p>
           </section>
 
@@ -219,13 +235,17 @@ export default function App() {
                     </span>
                   )}
                 </div>
-                {data && data.candidates.length > 0 && (
+                {summaryEnabled && data && data.candidates.length > 0 && (
                   <DonutChart candidates={data.candidates} />
                 )}
               </div>
 
               {!summaryEnabled && (
-                <p className="mt-4 text-sm text-[var(--color-muted)]">Selecione um estado para ver o painel.</p>
+                <p className="mt-4 text-sm text-[var(--color-muted)]">Escolha um estado para ver o painel.</p>
+              )}
+
+              {summaryEnabled && error && !data && (
+                <p className="mt-4 text-sm text-[var(--color-muted)]">Sem dados para mostrar neste recorte no momento.</p>
               )}
 
               {summaryEnabled && loading && !data && (
@@ -236,7 +256,7 @@ export default function App() {
                 </div>
               )}
 
-              {data && (
+              {summaryEnabled && data && (
                 <>
                   <div className="mt-4 space-y-3">
                     {data.candidates.map((c, i) => (
@@ -252,7 +272,7 @@ export default function App() {
                   </div>
                   {data.candidates.every((c) => c.votes === 0) && (
                     <p className="mt-3 text-sm text-[var(--color-muted)]">
-                      Apuração ainda não iniciada ou zerada neste recorte. Os números aparecem conforme o TSE publica.
+                      A apuração ainda não começou neste recorte. Os números aparecem aqui assim que o TSE publicar.
                     </p>
                   )}
                   <div className="mt-6">
