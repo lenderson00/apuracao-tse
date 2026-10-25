@@ -116,10 +116,15 @@ export function BrazilMap({
           const slug = props.sigla?.toLowerCase();
           const lead = slug ? stateLeaders[slug] : undefined;
           if (lead?.leaderName) sub = `${lead.leaderName} · ${lead.leaderPct.toFixed(1)}%`;
+          else if (lead?.note) sub = lead.note;
         } else {
           const ibge = String(props.id ?? '');
           const lead = munLeaders?.[ibge];
-          if (lead && !lead.loading) sub = `${lead.leaderPct.toFixed(1)}% · margem ${lead.margin.toFixed(1)} pp`;
+          if (lead && !lead.loading) {
+            sub = lead.leaderId
+              ? `${lead.leaderPct.toFixed(1)}% · margem ${lead.margin.toFixed(1)} pp`
+              : (lead.note ?? '');
+          }
         }
         setTooltip({ x: event.offsetX, y: event.offsetY, title, sub });
       })

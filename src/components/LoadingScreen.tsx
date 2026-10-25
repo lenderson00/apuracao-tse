@@ -24,7 +24,7 @@ export function LoadingScreen({ visible }: { visible: boolean }) {
         <div className="absolute inset-0 rounded-full border-2 border-[var(--color-border)]" />
         <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-[var(--color-accent)]" />
       </div>
-      <p className="text-sm text-[var(--color-muted)]">Carregando apuração oficial…</p>
+      <p className="text-sm text-[var(--color-muted)]">Carregando a apuração…</p>
     </div>
   );
 }
