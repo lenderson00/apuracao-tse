@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import clsx from 'clsx';
+import { candFill, STEP_LABELS, stepFill } from '../lib/ui/color';
+import { titleCase } from '../lib/ui/format';
 import { Icon } from './ui/Icon';
 
 export const TSE_URL = 'https://resultados.tse.jus.br';
@@ -23,26 +25,12 @@ export function Mark({ size = 28 }: { size?: number }) {
 }
 
 /** Marca + aviso de independência (sempre visível no topo). */
-export function Brand({ compact, onAbout }: { compact?: boolean; onAbout?: () => void }) {
-  if (compact) {
-    // mobile: o bloco todo abre o "Sobre" (com o link para o TSE) e é um alvo de toque grande
-    return (
-      <button type="button" onClick={onAbout} className="flex h-14 min-w-0 items-center gap-2.5 text-left" aria-label="Sobre este site e fonte dos dados">
-        <Mark size={30} />
-        <span className="min-w-0 leading-none">
-          <span className="block truncate text-small font-semibold tracking-[-0.01em] text-ink">Apuração 2026</span>
-          <span className="mt-1 block truncate text-[0.6875rem] text-ink-3">
-            <span className="text-ink-2">Dados públicos do TSE</span> · sem vínculo com o TSE
-          </span>
-        </span>
-      </button>
-    );
-  }
+export function Brand({ compact }: { compact?: boolean }) {
   return (
-    <div className="flex min-w-0 items-center gap-2.5">
-      <Mark size={compact ? 30 : 28} />
+    <div className={clsx('flex min-w-0 items-center', compact ? 'gap-2' : 'gap-2.5')}>
+      <Mark size={compact ? 26 : 28} />
       <div className="min-w-0 leading-none">
-        <p className="truncate text-small font-semibold tracking-[-0.01em] text-ink">
+        <p className={clsx('truncate font-semibold tracking-[-0.01em] text-ink', compact ? 'text-[0.78rem]' : 'text-small')}>
           Apuração 2026
           <span className="font-normal text-ink-3"> · </span>
           <a
@@ -54,7 +42,7 @@ export function Brand({ compact, onAbout }: { compact?: boolean; onAbout?: () =>
             Dados públicos do TSE
           </a>
         </p>
-        <p className="mt-1 truncate font-mono text-nano text-ink-3">
+        <p className={clsx('mt-1 truncate text-ink-3', compact ? 'text-[0.66rem]' : 'font-mono text-nano')}>
           Site independente, sem vínculo com o TSE
         </p>
       </div>
@@ -69,21 +57,40 @@ export interface Crumb {
   onClick?: () => void;
 }
 
-export function Breadcrumb({ items, className }: { items: Crumb[]; className?: string }) {
+export function Breadcrumb({
+  items,
+  status,
+  className,
+  bare,
+}: {
+  items: Crumb[];
+  status?: ReactNode;
+  className?: string;
+  /** sem moldura (dentro do sheet no mobile) */
+  bare?: boolean;
+}) {
   return (
-    <nav aria-label="Você está em" className={clsx('float flex h-9 items-center gap-0.5 rounded-pill px-1 pointer-coarse:h-11 pointer-coarse:px-0', className)}>
+    <nav
+      aria-label="Você está em"
+      className={clsx(
+        'flex min-w-0 items-center gap-0.5',
+        bare ? '-ml-2' : 'float h-(--h-2) px-1 pr-2',
+        className,
+      )}
+    >
       {items.map((c, i) => {
         const last = i === items.length - 1;
         return (
           <span key={i} className="flex min-w-0 items-center gap-0.5">
-            {i > 0 && <Icon name="chevron-right" size={12} className="shrink-0 text-ink-4" />}
+            {i > 0 && <span className="shrink-0 text-ink-4" aria-hidden>/</span>}
             <button
               type="button"
               onClick={c.onClick}
               disabled={last}
               aria-current={last ? 'location' : undefined}
               className={clsx(
-                'max-w-44 truncate rounded-pill px-2.5 py-1 text-caption font-medium transition-colors pointer-coarse:flex pointer-coarse:h-11 pointer-coarse:items-center pointer-coarse:px-3 pointer-coarse:text-small',
+                'max-w-44 truncate rounded-(--r-inner) px-2 py-1 text-caption font-medium transition-colors pointer-coarse:min-w-11',
+                'pointer-coarse:flex pointer-coarse:h-11 pointer-coarse:items-center pointer-coarse:px-2.5 pointer-coarse:text-small',
                 last ? 'text-ink' : 'text-ink-3 hover:bg-hover hover:text-ink',
               )}
             >
@@ -92,35 +99,142 @@ export function Breadcrumb({ items, className }: { items: Crumb[]; className?: s
           </span>
         );
       })}
+      {status && <span className="ml-1.5 shrink-0">{status}</span>}
     </nav>
   );
 }
 
 /* ---------------------------------------------------------------- zoom */
 
+/** "− 100% +" agrupados, mais recentralizar. O percentual vem do mapa por assinatura. */
 export function ZoomControls({
   onIn,
   onOut,
   onRecenter,
+  subscribe,
   className,
 }: {
   onIn: () => void;
   onOut: () => void;
   onRecenter: () => void;
+  subscribe: (cb: (pct: number) => void) => () => void;
   className?: string;
 }) {
+  const [pct, setPct] = useState(100);
+  useEffect(() => subscribe((p) => setPct(Math.round(p))), [subscribe]);
   return (
-    <div className={clsx('float flex flex-col gap-px rounded-xl p-1', className)} role="group" aria-label="Zoom do mapa">
-      <button type="button" className="btn btn-icon" onClick={onIn} aria-label="Aproximar" title="Aproximar (+)">
-        <Icon name="plus" size={15} />
+    <div className={clsx('float flex h-(--h-2) items-center gap-0.5 px-0.5', className)} role="group" aria-label="Zoom do mapa">
+      <button type="button" className="btn btn-icon size-7" onClick={onOut} aria-label="Afastar" title="Afastar (−)">
+        <Icon name="minus" size={14} />
       </button>
-      <button type="button" className="btn btn-icon" onClick={onOut} aria-label="Afastar" title="Afastar (−)">
-        <Icon name="minus" size={15} />
+      <span className="tnum w-12 text-center font-mono text-micro text-ink-2" aria-label="Nível de zoom">
+        {pct}%
+      </span>
+      <button type="button" className="btn btn-icon size-7" onClick={onIn} aria-label="Aproximar" title="Aproximar (+)">
+        <Icon name="plus" size={14} />
       </button>
-      <span className="mx-1.5 my-0.5 h-px bg-line" aria-hidden />
-      <button type="button" className="btn btn-icon" onClick={onRecenter} aria-label="Recentralizar" title="Recentralizar (0)">
-        <Icon name="target" size={15} />
+      <span className="mx-0.5 h-4 w-px bg-line-strong" aria-hidden />
+      <button type="button" className="btn btn-icon size-7" onClick={onRecenter} aria-label="Recentralizar" title="Recentralizar (0)">
+        <Icon name="target" size={14} />
       </button>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------- painel do mapa */
+
+export interface LegendItem {
+  key: string;
+  name: string;
+  color: string;
+  count: number;
+}
+
+export interface MapSummary {
+  items: LegendItem[];
+  neutral: number;
+  errors: number;
+  loading: number;
+  total: number;
+  unit: 'UF' | 'municípios';
+  updatedAt: Date | null;
+  progress: number | null;
+}
+
+const hhmm = (d: Date) =>
+  d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+
+/** Legenda em linhas densas: cor, nome, contagem à direita; escala de vantagem; hora do mapa. */
+export function MapPanel({ s, title, bare, className }: { s: MapSummary; title: string; bare?: boolean; className?: string }) {
+  const done = s.total - s.loading;
+  return (
+    <div className={clsx(bare ? '' : 'panel w-60 px-3 pb-2.5 pt-2.5', className)} aria-label="Legenda do mapa">
+      <div className="flex items-center justify-between gap-2">
+        <p className="eyebrow">{title}</p>
+        <span className="tnum font-mono text-nano text-ink-3">
+          {done}/{s.total} {s.unit}
+        </span>
+      </div>
+      <dl className="mt-1.5">
+        {s.items.map((it) => (
+          <Line key={it.key} swatch={candFill(it.color)} label={titleCase(it.name)} value={it.count} strong />
+        ))}
+        <Line swatch="var(--map-neutral)" label="Sem votos ou empate" value={s.neutral} />
+        {s.errors > 0 && <Line swatch="url(#legend-hatch)" label="Sem resposta do TSE" value={s.errors} />}
+      </dl>
+      {s.items.length > 0 && (
+        <div className="mt-2 border-t border-line pt-2">
+          <p className="mb-1.5 flex justify-between text-nano text-ink-3">
+            <span>Vantagem</span>
+            <span>pequena → grande</span>
+          </p>
+          <div className="flex flex-col gap-1">
+            {s.items.slice(0, 2).map((it) => (
+              <div key={it.key} className="flex gap-0.5" title={`Vantagem de ${titleCase(it.name)}`}>
+                {[0, 1, 2, 3].map((i) => (
+                  <span key={i} className="h-2 flex-1 first:rounded-l-[3px] last:rounded-r-[3px]" style={{ background: stepFill(it.color, i) }} title={STEP_LABELS[i]} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-2 font-mono text-nano text-ink-3">
+        <span className="flex items-center gap-1.5">
+          <Icon name="clock" size={11} />
+          {s.updatedAt ? `Mapa às ${hhmm(s.updatedAt)}` : 'Mapa carregando'}
+        </span>
+        {s.progress !== null && s.progress < 100 ? (
+          <span className="flex items-center gap-1.5" aria-label={`Municípios carregados: ${s.progress}%`}>
+            <span className="track h-1 w-10">
+              <span className="block h-full bg-ink transition-[width] duration-300" style={{ width: `${s.progress}%` }} />
+            </span>
+            <span className="tnum">{s.progress}%</span>
+          </span>
+        ) : (
+          <span>a cada 2 min</span>
+        )}
+      </div>
+      <svg width="0" height="0" className="absolute" aria-hidden>
+        <defs>
+          <pattern id="legend-hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="4" height="4" style={{ fill: 'var(--map-error)' }} />
+            <line x1="0" y1="0" x2="0" y2="4" style={{ stroke: 'rgb(255 255 255 / 0.14)' }} strokeWidth="1" />
+          </pattern>
+        </defs>
+      </svg>
+    </div>
+  );
+}
+
+function Line({ swatch, label, value, strong }: { swatch: string; label: string; value: number; strong?: boolean }) {
+  return (
+    <div className="grid h-6 grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-x-2">
+      <svg width="10" height="10" className="rounded-[3px]" aria-hidden>
+        <rect width="10" height="10" fill={swatch} />
+      </svg>
+      <dt className={clsx('truncate text-caption', strong ? 'font-medium text-ink' : 'text-ink-2')}>{label}</dt>
+      <dd className="tnum text-right font-mono text-micro text-ink-2">{value}</dd>
     </div>
   );
 }
@@ -169,8 +283,8 @@ export function AboutContent() {
         Projeto independente, sem vínculo com o TSE. Os números vêm dos arquivos públicos de{' '}
         <a href={TSE_URL} target="_blank" rel="noreferrer" className="text-ink underline underline-offset-2">
           resultados.tse.jus.br
-        </a>{' '}
-        e atualizam a cada minuto.
+        </a>
+        . O painel atualiza a cada minuto e as cores do mapa, a cada 2 minutos.
       </p>
       <p>Para o resultado oficial, consulte o TSE. Antes das 17h de Brasília, todos os candidatos aparecem com 0%.</p>
     </div>
@@ -226,7 +340,7 @@ export function Rail({ top, bottom }: { top: RailAction[]; bottom: RailAction[] 
         onFocus={() => setTip(a.id)}
         onBlur={() => setTip(null)}
         className={clsx(
-          'grid size-9 place-items-center rounded-[10px] transition-colors duration-150',
+          'grid size-9 place-items-center rounded-(--r-inner) transition-colors duration-150',
           a.active ? 'bg-hover text-ink shadow-[inset_0_0_0_1px_var(--line-strong)]' : 'text-ink-3 hover:bg-hover hover:text-ink',
         )}
       >

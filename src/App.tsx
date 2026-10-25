@@ -9,11 +9,14 @@ import {
   ShortcutsContent,
   TSE_URL,
   ZoomControls,
+  MapPanel,
   type Crumb,
+  type LegendItem,
+  type MapSummary,
 } from './components/Chrome';
 import { Dock } from './components/Dock';
 import { hasStarted } from './lib/ui/turnout';
-import { MapLegend, type LegendItem } from './components/MapLegend';
+import { StatusPill } from './components/Status';
 import { MunicipalitySearch } from './components/MunicipalitySearch';
 import { Icon } from './components/ui/Icon';
 import { Tabs } from './components/ui/Tabs';
@@ -30,7 +33,7 @@ import { useMediaQuery } from './lib/ui/useMediaQuery';
 
 const isRunoffUf = (uf: string) => (GOV_RUNOFF_UFS as ReadonlySet<string>).has(uf);
 
-const STATE_POLL_MS = 60_000;
+const STATE_POLL_MS = 120_000;
 const MUN_POLL_MS = 180_000;
 
 type Names = Record<string, { name: string; color: string }>;
@@ -280,37 +283,61 @@ export default function App() {
     document.title = scope === 'br' ? 'Apuração das Eleições 2026' : `${title} · Apuração 2026`;
   }, [scope, title]);
 
-  /* ----------------------------------------------------------------- legenda */
-  const legend = useMemo<{ items: LegendItem[]; unit: string; hasError: boolean }>(() => {
+  /* ------------------------------------------------------- legenda do mapa */
+  const [mapUpdatedAt, setMapUpdatedAt] = useState<Date | null>(null);
+  useEffect(() => {
+    const all = Object.values(stateLeaders);
+    if (all.length === UF_LIST.length && all.every((v) => !v.loading)) setMapUpdatedAt(new Date());
+  }, [stateLeaders]);
+
+  const summary = useMemo<MapSummary>(() => {
     const counts = new Map<string, LegendItem>();
     const base = shown?.candidates ?? [];
     for (const c of base.slice(0, 2)) counts.set(c.shortName, { key: c.sqcand, name: c.shortName, color: c.color, count: 0 });
-    const views = Object.values(focusUf ? munViews : stateViews);
-    let hasError = false;
+    const views = focusUf ? munInUf.map((m) => munViews[m.ibgeCode]) : UF_LIST.map((u) => stateViews[u.slug]);
+    let neutral = 0;
+    let errors = 0;
+    let loading = 0;
     for (const v of views) {
-      if (v.status === 'error') hasError = true;
-      if (v.status !== 'leader' || !v.leaderName || !v.color) continue;
-      const it = counts.get(v.leaderName) ?? { key: v.leaderName, name: v.leaderName, color: v.color, count: 0 };
-      it.count += 1;
-      counts.set(v.leaderName, it);
+      if (!v || v.status === 'loading') loading += 1;
+      else if (v.status === 'error') errors += 1;
+      else if (v.status === 'neutral') neutral += 1;
+      else if (v.leaderName && v.color) {
+        const it = counts.get(v.leaderName) ?? { key: v.leaderName, name: v.leaderName, color: v.color, count: 0 };
+        it.count += 1;
+        counts.set(v.leaderName, it);
+      }
     }
     const items = [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 4);
-    return { items, unit: focusUf ? 'mun.' : 'UF', hasError };
-  }, [shown, focusUf, munViews, stateViews]);
+    return {
+      items,
+      neutral,
+      errors,
+      loading,
+      total: views.length,
+      unit: focusUf ? 'municípios' : 'UF',
+      updatedAt: mapUpdatedAt,
+      progress: focusUf && munInUf.length ? munProgress : null,
+    };
+  }, [shown, focusUf, munInUf, munViews, stateViews, mapUpdatedAt, munProgress]);
 
   /* ---------------------------------------------------------------- layout */
   const toolbarRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
-  const [insets, setInsets] = useState<Insets>({ top: 64, right: 64, bottom: 200, left: 0 });
+  const [peek, setPeek] = useState(240);
+  const [insets, setInsets] = useState<Insets>({ top: 64, right: 0, bottom: 200, left: 0 });
   useLayoutEffect(() => {
     const measure = () => {
       const tb = toolbarRef.current?.getBoundingClientRect();
       const dk = dockRef.current?.getBoundingClientRect();
-      const frame = dockRef.current?.offsetParent?.getBoundingClientRect();
+      const frame = toolbarRef.current?.offsetParent?.getBoundingClientRect();
       if (!tb || !dk || !frame) return;
+      // "Ver todos" aberto não deve encolher o mapa
+      if (dockRef.current?.querySelector('[data-expanded="true"]')) return;
+      // área livre real: entre a 1ª linha de controles e o topo do dock (ou do sheet recolhido)
       const next: Insets = desktop
-        ? { top: 60, right: 64, bottom: frame.bottom - dk.top + 8, left: 0 }
-        : { top: tb.bottom - frame.top + 4, right: 0, bottom: frame.bottom - dk.top + 4, left: 0 };
+        ? { top: tb.bottom - frame.top + 4, right: 0, bottom: frame.bottom - dk.top + 4, left: 0 }
+        : { top: tb.bottom - frame.top + 4, right: 0, bottom: peek + 8, left: 0 };
       setInsets((p) =>
         Math.abs(p.top - next.top) < 2 && Math.abs(p.bottom - next.bottom) < 2 && p.right === next.right ? p : next,
       );
@@ -320,7 +347,7 @@ export default function App() {
     if (toolbarRef.current) ro.observe(toolbarRef.current);
     if (dockRef.current) ro.observe(dockRef.current);
     return () => ro.disconnect();
-  }, [desktop]);
+  }, [desktop, peek]);
 
   const crumbs: Crumb[] = [{ label: 'Brasil', onClick: goCountry }];
   if (ufMeta) crumbs.push({ label: desktop ? ufMeta.name : ufMeta.sigla, onClick: () => goState(ufMeta.slug) });
@@ -349,6 +376,9 @@ export default function App() {
     />
   ) : undefined;
 
+  const statusPill = <StatusPill data={shown} />;
+  const mobileCrumbs = crumbs.length > 1 ? <Breadcrumb items={crumbs} bare /> : undefined;
+
   const dock = (
     <Dock
       mode={desktop ? 'desktop' : 'mobile'}
@@ -363,18 +393,13 @@ export default function App() {
       photoUf={photoUf}
       majority={officeId === '1' || officeId === '3'}
       empty={emptyDock}
+      crumbs={mobileCrumbs}
+      mapPanel={<MapPanel s={summary} title="Quem lidera" bare />}
+      onPeekHeight={desktop ? undefined : setPeek}
     />
   );
 
-  const progress =
-    focusUf && munInUf.length > 0 && munProgress < 100 ? (
-      <span className="float flex h-9 items-center gap-2 rounded-pill px-3" aria-label={`Municípios carregados: ${munProgress}%`}>
-        <span className="track h-1 w-12">
-          <span className="block h-full bg-ink transition-[width] duration-300" style={{ width: `${munProgress}%` }} />
-        </span>
-        <span className="tnum font-mono text-nano text-ink-3">{munProgress}%</span>
-      </span>
-    ) : null;
+  const subscribeZoom = useCallback((cb: (pct: number) => void) => mapApi.current?.subscribeZoom(cb) ?? (() => undefined), []);
 
   const map = (
     <BrazilMap
@@ -392,6 +417,7 @@ export default function App() {
       onZoomMun={onZoomMun}
       onHoverMun={onHoverMun}
       onLevel={setLevel}
+      dismissKey={shown && !stale ? `${shown.scope}-${shown.scopeCode}` : undefined}
       apiRef={mapApi}
     />
   );
@@ -416,6 +442,14 @@ export default function App() {
           onData={setMunSrc}
         />
       )}
+    </>
+  );
+
+  const tabsBar = (
+    <>
+      <Tabs<Round> label="Turno" value={round} onChange={changeRound} items={roundItems} />
+      <span className="h-5 w-px shrink-0 bg-line-strong" aria-hidden />
+      <Tabs<OfficeId> label="Cargo" value={officeId} onChange={changeOffice} items={officeItems} />
     </>
   );
 
@@ -451,38 +485,35 @@ export default function App() {
         <main className="relative min-w-0 flex-1 overflow-hidden rounded-[20px] border border-line bg-bg">
           {map}
 
-          <div ref={toolbarRef} className="pointer-events-none absolute inset-x-3 top-3 z-20 flex items-start justify-between gap-3">
-            <div className="flex w-[19.5rem] shrink-0 flex-col items-start gap-2">
-              <div className="float pointer-events-auto flex h-11 items-center rounded-xl pl-2 pr-3.5">
-                <Brand />
-              </div>
-              <div className="pointer-events-auto flex items-center gap-2">
-                <Breadcrumb items={crumbs} />
-                {progress}
-              </div>
-              {legendOn && <MapLegend items={legend.items} unit={legend.unit} hasError={legend.hasError} className="pointer-events-auto" />}
+          {/* 1ª linha: marca · abas · busca (todas com a mesma altura) */}
+          <div
+            ref={toolbarRef}
+            className="pointer-events-none absolute inset-x-(--edge) top-(--edge) z-20 grid grid-cols-[1fr_auto_1fr] items-center gap-3"
+          >
+            <div className="float pointer-events-auto flex h-(--h-1) w-fit items-center pl-2 pr-3.5">
+              <Brand />
             </div>
-
-            <div className="float pointer-events-auto flex h-11 shrink-0 items-center gap-1.5 rounded-pill px-1.5 min-[1500px]:absolute min-[1500px]:left-1/2 min-[1500px]:top-0 min-[1500px]:-translate-x-1/2">
-              <Tabs<Round> label="Turno" value={round} onChange={changeRound} items={roundItems} />
-              <span className="h-5 w-px bg-line-strong" aria-hidden />
-              <Tabs<OfficeId> label="Cargo" value={officeId} onChange={changeOffice} items={officeItems} />
-            </div>
-
-            <div id="busca" className="float pointer-events-auto ml-auto flex h-11 w-52 shrink-0 items-center rounded-pill px-1.5 min-[1500px]:w-72">
+            <div className="float pointer-events-auto flex h-(--h-1) items-center gap-1.5 px-1.5">{tabsBar}</div>
+            <div id="busca" className="float pointer-events-auto flex h-(--h-1) w-56 items-center justify-self-end px-1.5 min-[1500px]:w-72">
               <MunicipalitySearch items={munIndex} onPick={onSearchPick} className="w-full" />
             </div>
           </div>
 
+          {/* 2ª linha: breadcrumb + status à esquerda, zoom à direita; legenda abaixo */}
+          <div className="pointer-events-none absolute left-(--edge) top-[calc(var(--edge)+var(--h-1)+8px)] z-20 flex flex-col items-start gap-2">
+            <Breadcrumb items={crumbs} status={statusPill} className="pointer-events-auto" />
+            {legendOn && <MapPanel s={summary} title="Quem lidera" className="pointer-events-auto" />}
+          </div>
           <ZoomControls
-            className="absolute right-3 top-1/2 z-20 -translate-y-1/2"
+            className="absolute right-(--edge) top-[calc(var(--edge)+var(--h-1)+8px)] z-20"
             onIn={() => mapApi.current?.zoomBy(1.6)}
             onOut={() => mapApi.current?.zoomBy(1 / 1.6)}
             onRecenter={() => mapApi.current?.recenter()}
+            subscribe={subscribeZoom}
           />
 
-          <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 flex justify-center">
-            <div ref={dockRef} className="w-full max-w-[1080px]">
+          <div className="pointer-events-none absolute inset-x-(--edge) bottom-(--edge) z-20 flex justify-center">
+            <div ref={dockRef} className="w-full max-w-[1100px]">
               {dock}
             </div>
           </div>
@@ -498,60 +529,69 @@ export default function App() {
       {sources}
       {map}
 
+      {/* topo em 2 linhas: marca + busca + menu; turno e cargo */}
       <div
         ref={toolbarRef}
         className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-1.5 px-2 pt-[max(0.5rem,env(safe-area-inset-top))]"
       >
         {searching ? (
-          <div className="float pointer-events-auto flex h-14 items-center gap-1 rounded-2xl px-2">
+          <div className="float pointer-events-auto flex h-14 items-center gap-1 px-2">
             <MunicipalitySearch items={munIndex} onPick={onSearchPick} className="flex-1" autoFocus onDone={() => setSearching(false)} />
             <button type="button" className="btn shrink-0" onClick={() => setSearching(false)}>
               Cancelar
             </button>
           </div>
         ) : (
-          <div className="float pointer-events-auto relative flex h-14 items-center gap-1 rounded-2xl pl-2.5 pr-1">
+          <div className="float pointer-events-auto relative flex h-14 items-center gap-0.5 pl-2.5 pr-1">
             <div className="min-w-0 flex-1">
-              <Brand compact onAbout={() => setPop((p) => (p === 'about' ? null : 'about'))} />
+              <Brand compact />
             </div>
             <button type="button" className="btn btn-icon shrink-0" aria-label="Buscar município" onClick={() => setSearching(true)}>
               <Icon name="search" size={18} />
             </button>
+            <button
+              type="button"
+              className="btn btn-icon shrink-0"
+              aria-label="Menu"
+              aria-expanded={pop === 'about'}
+              onClick={() => setPop((p) => (p === 'about' ? null : 'about'))}
+            >
+              <Icon name="menu" size={18} />
+            </button>
             <Popover open={pop === 'about'} onClose={() => setPop(null)} className="right-0 top-full mt-2 w-[min(20rem,calc(100vw-1rem))]">
               <AboutContent />
+              <div className="mt-3 flex gap-2 border-t border-line pt-3">
+                <button
+                  type="button"
+                  className="btn btn-outline flex-1"
+                  onClick={() => {
+                    setPop(null);
+                    goCountry();
+                  }}
+                >
+                  <Icon name="map" size={15} /> Ver o Brasil
+                </button>
+                <button type="button" className="btn btn-outline flex-1" onClick={() => window.open(TSE_URL, '_blank', 'noopener')}>
+                  <Icon name="external" size={15} /> Site do TSE
+                </button>
+              </div>
             </Popover>
           </div>
         )}
-        <div className="pointer-events-auto -mx-2 flex gap-1.5 px-2 scroll-x">
-          <div className="float flex shrink-0 items-center rounded-pill p-0.5">
-            <Tabs<Round> label="Turno" value={round} onChange={changeRound} items={roundItems} />
-          </div>
-          <div className="float flex shrink-0 items-center rounded-pill p-0.5">
-            <Tabs<OfficeId> label="Cargo" value={officeId} onChange={changeOffice} items={officeItems} />
-          </div>
+        <div className="float pointer-events-auto flex items-center gap-1 self-start overflow-x-auto px-1 py-0.5 scroll-x max-w-full">
+          {tabsBar}
         </div>
-        <div className="flex items-center gap-1.5">
-          <Breadcrumb items={crumbs} className="pointer-events-auto h-10 min-w-0" />
-          {progress}
-          <button
-            type="button"
-            className="float pointer-events-auto btn btn-icon ml-auto shrink-0 rounded-pill"
-            onClick={() => mapApi.current?.recenter()}
-            aria-label="Recentralizar mapa"
-          >
-            <Icon name="target" size={17} />
-          </button>
-        </div>
-        {legend.items.length > 0 && (
-          <MapLegend
-            items={legend.items}
-            unit={legend.unit}
-            hasError={legend.hasError}
-            layout="row"
-            className="float pointer-events-auto max-w-full self-start overflow-hidden rounded-pill px-3 py-1.5 scroll-x [mask-image:linear-gradient(90deg,#000_85%,transparent)]"
-          />
-        )}
       </div>
+
+      <button
+        type="button"
+        className="float btn btn-icon pointer-events-auto absolute right-2 z-20"
+        style={{ bottom: peek + 10 }}
+        onClick={() => mapApi.current?.recenter()}
+        aria-label="Recentralizar mapa"
+      >
+        <Icon name="target" size={17} />
+      </button>
 
       <div ref={dockRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-30">
         {dock}

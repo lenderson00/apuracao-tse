@@ -17,17 +17,17 @@ export interface RegionView {
 
 const FILL: Record<Exclude<RegionStatus, 'leader'>, string> = {
   neutral: 'var(--map-neutral)',
-  loading: 'var(--map-loading)',
+  loading: 'url(#map-shimmer)',
   error: 'url(#map-hatch)',
 };
 
 /** Estado → visão do mapa. Sem líder: nota (sem votos/empate) ou falha. */
-export function stateView(s: StateLeader | undefined, marginScale = 18): RegionView {
+export function stateView(s: StateLeader | undefined): RegionView {
   if (!s || s.loading) return { status: 'loading', fill: FILL.loading, pct: 0, margin: 0 };
   if (s.leaderName) {
     return {
       status: 'leader',
-      fill: mapFill(s.leaderColor, s.margin / marginScale),
+      fill: mapFill(s.leaderColor, s.margin),
       leaderName: s.leaderName,
       color: s.leaderColor,
       pct: s.leaderPct,
@@ -41,13 +41,12 @@ export function stateView(s: StateLeader | undefined, marginScale = 18): RegionV
 export function munView(
   m: MunLeader | undefined,
   names: Record<string, { name: string; color: string }>,
-  marginScale = 14,
 ): RegionView {
   if (!m || m.loading) return { status: 'loading', fill: FILL.loading, pct: 0, margin: 0 };
   if (m.leaderId) {
     return {
       status: 'leader',
-      fill: mapFill(m.leaderColor, m.margin / marginScale),
+      fill: mapFill(m.leaderColor, m.margin),
       leaderName: names[m.leaderId]?.name,
       leaderId: m.leaderId,
       color: m.leaderColor,

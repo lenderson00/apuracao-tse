@@ -28,6 +28,8 @@ export type MapLevel = 'country' | 'state' | 'mun';
 export interface MapApi {
   zoomBy: (factor: number) => void;
   recenter: () => void;
+  /** assina o percentual de zoom (100% = Brasil inteiro) */
+  subscribeZoom: (cb: (pct: number) => void) => () => void;
 }
 
 export interface Insets {
@@ -54,6 +56,8 @@ interface Props {
   onZoomMun: (ibge: string | null) => void;
   onHoverMun: (ibge: string | null) => void;
   onLevel: (level: MapLevel) => void;
+  /** muda quando o dock troca de recorte: some o tooltip de toque */
+  dismissKey?: string;
   apiRef?: Ref<MapApi>;
 }
 
@@ -120,6 +124,7 @@ export function BrazilMap(props: Props) {
   const [munLayerUf, setMunLayerUf] = useState<string | null>(null);
   const [hover, setHover] = useState<{ kind: 'state' | 'mun'; id: string } | null>(null);
   const [tap, setTap] = useState<{ kind: 'state' | 'mun'; id: string } | null>(null);
+  const [reduced] = useState(prefersReducedMotion);
 
   const proj = useRef<{ projection: GeoProjection; path: GeoPath } | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
@@ -132,6 +137,16 @@ export function BrazilMap(props: Props) {
   const inertiaRaf = useRef(0);
   const semanticTimer = useRef(0);
   const introDone = useRef(false);
+  const hatchRef = useRef<SVGPatternElement>(null);
+  const zoomSubs = useRef(new Set<(pct: number) => void>());
+  const zoomRaf = useRef(0);
+  const notifyZoom = useCallback(() => {
+    cancelAnimationFrame(zoomRaf.current);
+    zoomRaf.current = requestAnimationFrame(() => {
+      const pct = (tRef.current.k / countryK.current) * 100;
+      zoomSubs.current.forEach((cb) => cb(pct));
+    });
+  }, []);
   /** o gesto atual (arrasto/roda/pinça) moveu a câmera? */
   const gestureMoved = useRef(false);
   /** o usuário mexeu na câmera desde o último voo? (aí não reenquadramos sozinhos) */
@@ -171,10 +186,10 @@ export function BrazilMap(props: Props) {
     const s = sizeRef.current;
     if (!s) return d3.zoomIdentity;
     const ins = live.current.insets;
-    const ax0 = ins.left + 16;
-    const ay0 = ins.top + 12;
-    const ax1 = s.w - ins.right - 16;
-    const ay1 = s.h - ins.bottom - 12;
+    const ax0 = ins.left + 8;
+    const ay0 = ins.top + 6;
+    const ax1 = s.w - ins.right - 8;
+    const ay1 = s.h - ins.bottom - 6;
     const aw = Math.max(40, ax1 - ax0);
     const ah = Math.max(40, ay1 - ay0);
     const [[x0, y0], [x1, y1]] = bounds;
@@ -196,7 +211,7 @@ export function BrazilMap(props: Props) {
       const f = stateFeatures.current.get(uf);
       const p = proj.current;
       if (!f || !p) return countryK.current * 3;
-      return fitTransform(p.path.bounds(f) as [[number, number], [number, number]], 0.88).k;
+      return fitTransform(p.path.bounds(f) as [[number, number], [number, number]], 0.94).k;
     },
     [fitTransform],
   );
@@ -295,7 +310,7 @@ export function BrazilMap(props: Props) {
       .attr('tabindex', 0)
       .attr('role', 'button')
       .attr('stroke-width', 1)
-      .style('fill', 'var(--map-loading)');
+      .style('fill', 'url(#map-shimmer)');
 
     d3.select(stateLabelsRef.current)
       .selectAll<SVGTextElement, GeoF>('text')
@@ -328,6 +343,9 @@ export function BrazilMap(props: Props) {
         tRef.current = t;
         rootRef.current?.setAttribute('transform', t.toString());
         rootRef.current?.style.setProperty('--k', String(t.k));
+        // hachurado em pixels de tela, não em unidades do mapa
+        hatchRef.current?.setAttribute('patternTransform', `rotate(45) scale(${1 / t.k})`);
+        notifyZoom();
         // grade de pontos acompanha a câmera, repetindo a cada oitava de zoom
         const wrap = wrapRef.current;
         if (wrap) {
@@ -380,7 +398,7 @@ export function BrazilMap(props: Props) {
     zoomRef.current = zoom;
 
     // enquadra o país (com uma entrada discreta)
-    const fit = fitTransform(path.bounds(states) as [[number, number], [number, number]], 0.92);
+    const fit = fitTransform(path.bounds(states) as [[number, number], [number, number]], 0.97);
     countryK.current = fit.k;
     zoom.scaleExtent([fit.k * 0.6, fit.k * MAX_K_FACTOR]);
     if (prefersReducedMotion()) {
@@ -391,7 +409,7 @@ export function BrazilMap(props: Props) {
       gsap.fromTo(statesRef.current, { opacity: 0 }, { opacity: 1, duration: 0.9, ease: 'power2.out', clearProps: 'opacity' });
     }
     introDone.current = true;
-  }, [states, size, fitTransform, updateLabels, computeLevel, scheduleSemantic]);
+  }, [states, size, fitTransform, updateLabels, computeLevel, scheduleSemantic, notifyZoom]);
 
   /* --------------------------------------------------------- voo da câmera */
   const flyTo = useCallback(
@@ -402,10 +420,10 @@ export function BrazilMap(props: Props) {
       if (!svgEl || !zoom || !p || !states) return false;
       let t: d3.ZoomTransform | null = null;
       if (target.kind === 'country') {
-        t = fitTransform(countryBounds(), 0.92);
+        t = fitTransform(countryBounds(), 0.97);
       } else if (target.kind === 'state') {
         const f = stateFeatures.current.get(target.uf);
-        if (f) t = fitTransform(p.path.bounds(f) as [[number, number], [number, number]], 0.88);
+        if (f) t = fitTransform(p.path.bounds(f) as [[number, number], [number, number]], 0.94);
       } else {
         const layer = munLayer.current;
         const f = layer?.uf === target.uf ? layer.features.find((x) => String(x.properties.id) === target.ibge) : undefined;
@@ -433,13 +451,25 @@ export function BrazilMap(props: Props) {
   );
 
   const pendingCamera = useRef<Camera | null>(null);
+  const flyAt = useRef(0);
   useEffect(() => {
     if (!proj.current) {
       pendingCamera.current = camera;
       return;
     }
-    if (!flyTo(camera.target)) pendingCamera.current = camera;
-    else pendingCamera.current = null;
+    // clique em estado: a região levanta primeiro (~220ms), depois a câmera voa
+    const lift = camera.target.kind === 'state' && !prefersReducedMotion() ? 220 : 0;
+    flyAt.current = performance.now();
+    const go = () => {
+      if (!flyTo(camera.target)) pendingCamera.current = camera;
+      else pendingCamera.current = null;
+    };
+    if (!lift) {
+      go();
+      return;
+    }
+    const id = window.setTimeout(go, lift);
+    return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera.seq, flyTo]);
 
@@ -449,7 +479,7 @@ export function BrazilMap(props: Props) {
     if (!size || !proj.current || !states) return;
     const prev = lastSize.current;
     lastSize.current = size;
-    countryK.current = fitTransform(countryBounds(), 0.92).k;
+    countryK.current = fitTransform(countryBounds(), 0.97).k;
     zoomRef.current?.scaleExtent([countryK.current * 0.6, countryK.current * MAX_K_FACTOR]);
     if (prev && (prev.w !== size.w || prev.h !== size.h)) flyTo(live.current.camera.target, false);
   }, [size, states, fitTransform, countryBounds, flyTo]);
@@ -462,12 +492,16 @@ export function BrazilMap(props: Props) {
       firstInsets.current = false;
       return;
     }
-    if (!proj.current || userMoved.current) return;
+    if (!proj.current) return;
+    countryK.current = fitTransform(countryBounds(), 0.97).k;
+    zoomRef.current?.scaleExtent([countryK.current * 0.6, countryK.current * MAX_K_FACTOR]);
+    notifyZoom();
+    if (userMoved.current) return;
     const id = window.setTimeout(() => {
       if (!userMoved.current) flyTo(live.current.camera.target);
     }, 120);
     return () => window.clearTimeout(id);
-  }, [insetsKey, flyTo]);
+  }, [insetsKey, flyTo, fitTransform, countryBounds, notifyZoom]);
 
   useImperativeHandle(
     apiRef,
@@ -485,6 +519,11 @@ export function BrazilMap(props: Props) {
         scheduleSemantic(380);
       },
       recenter: () => flyTo(live.current.camera.target),
+      subscribeZoom: (cb) => {
+        zoomSubs.current.add(cb);
+        cb((tRef.current.k / countryK.current) * 100);
+        return () => zoomSubs.current.delete(cb);
+      },
     }),
     [flyTo, scheduleSemantic],
   );
@@ -523,7 +562,7 @@ export function BrazilMap(props: Props) {
           .attr('tabindex', 0)
           .attr('role', 'button')
           .attr('stroke-width', 0.5)
-          .style('fill', 'var(--map-loading)');
+          .style('fill', 'url(#map-shimmer)');
         munLayer.current = { uf: focusUf, features: feats, g };
         setMunLayerUf(focusUf);
 
@@ -552,6 +591,8 @@ export function BrazilMap(props: Props) {
             return Math.hypot(x - ox, y - oy);
           });
           const maxD = Math.max(...dists, 1);
+          // espera o voo da câmera (o estado levanta, voa, e aí os municípios entram)
+          const waveStart = performance.now() - flyAt.current < 500 ? 1.05 : 0.15;
           gsap.fromTo(
             nodes,
             { opacity: 0 },
@@ -559,7 +600,7 @@ export function BrazilMap(props: Props) {
               opacity: 1,
               duration: 0.4,
               ease: 'power1.out',
-              delay: (i: number) => 0.25 + (dists[i] / maxD) * 0.45,
+              delay: (i: number) => waveStart + (dists[i] / maxD) * 0.45,
               clearProps: 'opacity',
             },
           );
@@ -585,7 +626,7 @@ export function BrazilMap(props: Props) {
         const v = stateViews[uf];
         const disabled = disabledStates?.has(uf);
         const el = d3.select(this);
-        el.style('fill', v?.fill ?? 'var(--map-loading)')
+        el.style('fill', v?.fill ?? 'url(#map-shimmer)')
           .attr('data-state', v?.status ?? 'loading')
           .attr('data-disabled', disabled ? '' : null)
           .attr('data-active', uf === focusUf ? 'true' : null)
@@ -603,7 +644,7 @@ export function BrazilMap(props: Props) {
         const id = String(d.properties.id);
         const v = munViews[id];
         d3.select(this)
-          .style('fill', v?.fill ?? 'var(--map-loading)')
+          .style('fill', v?.fill ?? 'url(#map-shimmer)')
           .attr('data-state', v?.status ?? 'loading')
           .attr('aria-label', regionLabel(titleCase(d.properties.name ?? ''), v));
       });
@@ -633,17 +674,10 @@ export function BrazilMap(props: Props) {
     entered.each(function (d) {
       if (prefersReducedMotion()) return;
       const [cx, cy] = p.path.centroid(d);
-      gsap.fromTo(
-        this,
-        { scale: 1, opacity: 0, svgOrigin: `${cx} ${cy}` },
-        {
-          keyframes: [
-            { scale: 1.035, opacity: 1, duration: 0.35, ease: 'power2.out' },
-            { scale: 1, duration: 0.6, ease: 'power3.inOut' },
-          ],
-          svgOrigin: `${cx} ${cy}`,
-        },
-      );
+      gsap
+        .timeline()
+        .fromTo(this, { scale: 1, opacity: 0.6, svgOrigin: `${cx} ${cy}` }, { scale: 1.045, opacity: 1, duration: 0.26, ease: 'back.out(2)', svgOrigin: `${cx} ${cy}` })
+        .to(this, { scale: 1, duration: 0.7, ease: 'power3.inOut', svgOrigin: `${cx} ${cy}` }, '+=0.75');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusUf, states]);
@@ -656,8 +690,11 @@ export function BrazilMap(props: Props) {
       .selectAll('path')
       .style('fill', v?.fill ?? 'var(--map-loading)')
       .style('stroke', color)
-      .style('stroke-width', '1.5px')
-      .style('filter', `drop-shadow(0 0 calc(16px / var(--k, 1)) color-mix(in oklab, ${color} 60%, transparent))`);
+      .style('stroke-width', '2px')
+      .style(
+        'filter',
+        `drop-shadow(0 0 calc(22px / var(--k, 1)) color-mix(in oklab, ${color} 75%, transparent)) drop-shadow(0 calc(8px / var(--k, 1)) calc(14px / var(--k, 1)) rgb(0 0 0 / 0.7))`,
+      );
   }, [focusUf, stateViews]);
 
   /* ------------------------------------------- contornos: hover e destaque */
@@ -757,6 +794,12 @@ export function BrazilMap(props: Props) {
     setHoverTarget(el);
   };
 
+  /* toque: o cartão some quando o dock troca para o recorte tocado */
+  const dismissKey = props.dismissKey;
+  useEffect(() => {
+    setTap(null);
+  }, [dismissKey]);
+
   /* conteúdo do tooltip (hover no desktop, toque no mobile) */
   const info = buildInfo(touch ? tap : hover, stateViews, munViews, munLayer.current, stateFeatures.current, disabledStates);
 
@@ -785,10 +828,19 @@ export function BrazilMap(props: Props) {
         }}
       >
         <defs>
-          <pattern id="map-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width="6" height="6" fill="var(--map-error)" />
-            <line x1="0" y1="0" x2="0" y2="6" stroke="rgb(255 255 255 / 0.12)" strokeWidth="1.5" />
+          <pattern ref={hatchRef} id="map-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="6" height="6" style={{ fill: 'var(--map-error)' }} />
+            <line x1="0" y1="0" x2="0" y2="6" style={{ stroke: 'rgb(255 255 255 / 0.07)' }} strokeWidth="1.2" />
           </pattern>
+          {/* carregando: um único brilho em todo o mapa, em vez de cada área piscar sozinha */}
+          <linearGradient id="map-shimmer" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="420" y2="160" spreadMethod="reflect">
+            <stop offset="0" style={{ stopColor: 'var(--map-loading)' }} />
+            <stop offset="0.7" style={{ stopColor: 'var(--map-loading)' }} />
+            <stop offset="1" style={{ stopColor: 'var(--map-loading-hi)' }} />
+            {!reduced && (
+              <animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="840 320" dur="3.2s" repeatCount="indefinite" />
+            )}
+          </linearGradient>
         </defs>
         <g ref={rootRef}>
           <g ref={statesRef} className="map-states" />
