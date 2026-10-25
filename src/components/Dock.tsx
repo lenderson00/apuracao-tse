@@ -7,6 +7,7 @@ import { fmtInt, fmtPct, fmtUpdatedAt, titleCase } from '../lib/ui/format';
 import { dur, prefersReducedMotion } from '../lib/ui/motion';
 import { hasStarted } from '../lib/ui/turnout';
 import { CandidateAvatar } from './CandidateAvatar';
+import { Evolution } from './Evolution';
 import { StatusPill } from './Status';
 import { Icon } from './ui/Icon';
 import { Int, Pct } from './ui/Num';
@@ -37,12 +38,23 @@ interface Props {
 }
 
 const ANIMATED_ROWS = 20;
+
+/** Histórico só existe para Presidente 2º turno (Brasil e UFs), coletado a cada 10 min. */
+function historyKeyFor(data: ParsedResult | null): string | null {
+  if (!data || data.officeId !== '1' || data.round !== 2) return null;
+  if (data.scope === 'br') return 'br';
+  if (data.scope === 'uf') return data.scopeCode.toLowerCase();
+  return null;
+}
 const PAGE = 50;
 
 export function Dock(props: Props) {
   const { mode, data, error, empty } = props;
   const rootRef = useRef<HTMLElement>(null);
   const [expanded, setExpanded] = useState(false);
+  const [view, setView] = useState<'res' | 'evo'>('res');
+  const historyKey = historyKeyFor(data);
+  const activeView = historyKey ? view : 'res';
   const dataKey = data ? `${data.officeId}-${data.round}-${data.scope}-${data.scopeCode}` : 'none';
 
   /* entrada do dock */
@@ -75,7 +87,8 @@ export function Dock(props: Props) {
     empty
   ) : null;
 
-  if (mode === 'mobile') return <MobileSheet {...props} rootRef={rootRef} alt={alt} expanded={expanded} setExpanded={setExpanded} />;
+  if (mode === 'mobile')
+    return <MobileSheet {...props} rootRef={rootRef} alt={alt} expanded={expanded} setExpanded={setExpanded} historyKey={historyKey} />;
 
   return (
     <section
@@ -84,9 +97,29 @@ export function Dock(props: Props) {
       data-expanded={expanded}
       className="panel pointer-events-auto flex max-h-[min(64dvh,580px)] flex-col px-4 pb-3.5 pt-3"
     >
-      <Header {...props} />
+      <Header
+        {...props}
+        tabs={
+          historyKey && !alt ? (
+            <Tabs
+              label="Visualização"
+              value={activeView}
+              onChange={setView}
+              className="shrink-0"
+              items={[
+                { value: 'res', label: 'Resultado' },
+                { value: 'evo', label: 'Evolução' },
+              ]}
+            />
+          ) : null
+        }
+      />
       {alt ? (
         <div className="pt-3">{alt}</div>
+      ) : activeView === 'evo' && historyKey ? (
+        <div className="mt-2.5">
+          <Evolution mode="desktop" data={data} historyKey={historyKey} placeLabel={props.title} />
+        </div>
       ) : (
         <div className="mt-2.5 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(20rem,25rem)] gap-4 xl:gap-5">
           <div className="flex min-h-0 flex-col">
@@ -108,8 +141,10 @@ function MobileSheet({
   alt,
   expanded,
   setExpanded,
+  historyKey,
   ...props
 }: Props & {
+  historyKey: string | null;
   rootRef: React.RefObject<HTMLElement | null>;
   alt: ReactNode;
   expanded: boolean;
@@ -118,8 +153,8 @@ function MobileSheet({
   const { data, crumbs, mapPanel, onPeekHeight } = props;
   const list = data?.candidates ?? [];
   const duel = list.length === 2;
-  const [tab, setTab] = useState<'cand' | 'part' | 'map'>(duel ? 'part' : 'cand');
-  const activeTab = duel && tab === 'cand' ? 'part' : tab;
+  const [tab, setTab] = useState<'cand' | 'part' | 'evo' | 'map'>(duel ? 'part' : 'cand');
+  const activeTab = duel && tab === 'cand' ? 'part' : !historyKey && tab === 'evo' ? 'part' : tab;
   const peekRef = useRef<HTMLDivElement>(null);
   const [peekH, setPeekH] = useState(260);
 
@@ -139,6 +174,7 @@ function MobileSheet({
   const tabs = [
     ...(duel ? [] : [{ value: 'cand' as const, label: 'Candidatos' }]),
     { value: 'part' as const, label: 'Participação' },
+    ...(historyKey ? [{ value: 'evo' as const, label: 'Evolução' }] : []),
     { value: 'map' as const, label: 'Mapa' },
   ];
 
@@ -184,7 +220,7 @@ function MobileSheet({
         </div>
         {!alt && !expanded && (
           <button type="button" className="btn -mx-1 mt-1 h-11 w-[calc(100%+0.5rem)] justify-between px-1 text-caption text-ink-3" onClick={() => setExpanded(true)}>
-            <span>{duel ? 'Participação e legenda do mapa' : 'Todos os candidatos, participação e mapa'}</span>
+            <span>{duel ? (historyKey ? 'Participação, evolução e mapa' : 'Participação e legenda do mapa') : 'Todos os candidatos, participação e mapa'}</span>
             <Icon name="expand" size={14} />
           </button>
         )}
@@ -209,6 +245,8 @@ function MobileSheet({
               <Candidates {...props} expanded onToggle={() => undefined} listOnly />
             ) : activeTab === 'part' ? (
               <StatRows data={data} />
+            ) : activeTab === 'evo' && historyKey ? (
+              <Evolution mode="mobile" data={data} historyKey={historyKey} placeLabel={props.title} />
             ) : (
               mapPanel
             )}
@@ -236,7 +274,7 @@ function Summary(props: Props) {
 
 /* -------------------------------------------------------------- cabeçalho */
 
-function Header({ kindLabel, title, context, data, loading, stale }: Props) {
+function Header({ kindLabel, title, context, data, loading, stale, tabs }: Props & { tabs?: ReactNode }) {
   return (
     <header className="flex min-w-0 items-center gap-3">
       <span className="eyebrow shrink-0">{kindLabel}</span>
@@ -244,7 +282,8 @@ function Header({ kindLabel, title, context, data, loading, stale }: Props) {
         {title}
       </h2>
       {data || loading ? <StatusPill data={data} /> : null}
-      <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-nano text-ink-3">
+      {tabs && <span className="ml-auto">{tabs}</span>}
+      <span className={clsx('flex shrink-0 items-center gap-2 font-mono text-nano text-ink-3', !tabs && 'ml-auto')}>
         {stale && (
           <span className="inline-flex items-center gap-1.5 text-ink-2">
             <span className="size-1.5 animate-pulse rounded-full bg-accent" /> atualizando
