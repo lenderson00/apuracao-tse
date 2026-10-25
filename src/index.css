@@ -530,23 +530,6 @@
     }
   }
 
-  /* campos do formulário de anúncio: um pouco mais altos, mesma moldura única */
-  .ad-field {
-    height: 2.5rem;
-    padding-inline: 0.75rem;
-    background: rgb(255 255 255 / 0.035);
-    font-size: var(--text-body);
-  }
-  textarea.ad-field {
-    height: auto;
-  }
-  @media (pointer: coarse) {
-    .ad-field {
-      height: 2.75rem;
-      font-size: 1rem;
-    }
-  }
-
   .kbd {
     display: inline-grid;
     place-items: center;
@@ -680,16 +663,6 @@
     fill: rgb(255 255 255 / 0.55);
     stroke: none;
   }
-}
-
-/* espaço do anúncio no mini site: brilho passando devagar */
-.ad-slot::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgb(67 209 181 / 0.18), transparent);
-  animation: shimmer 2.4s var(--ease-in-out) 1s infinite;
 }
 
 @keyframes shimmer {

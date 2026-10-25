@@ -26,12 +26,7 @@ type IconName =
   | 'x-square'
   | 'id'
   | 'menu'
-  | 'clock'
-  | 'megaphone'
-  | 'devices'
-  | 'arrow-right'
-  | 'activity'
-  | 'mail';
+  | 'clock';
 
 const PATHS: Record<IconName, string> = {
   search: 'M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm10 2-4.35-4.35',
@@ -59,11 +54,6 @@ const PATHS: Record<IconName, string> = {
   id: 'M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Zm4.5 7.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 16a3 3 0 0 1 5 0m3-6h4m-4 3h3',
   menu: 'M4 7h16M4 12h16M4 17h16',
   clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-13v4l2.5 2.5',
-  megaphone: 'm3 11 18-5v12L3 14v-3Zm8.6 5.8a3 3 0 1 1-5.8-1.6',
-  devices: 'M14 17H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h13a1 1 0 0 1 1 1v2M7 20h7m4-10h3a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z',
-  'arrow-right': 'M5 12h14m-6-6 6 6-6 6',
-  activity: 'M3 12h4l3-8 4 16 3-8h4',
-  mail: 'M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Zm-1 1 9 6 9-6',
   target: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-5a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-13v3m0 12v3M3 12h3m12 0h3',
 };
 

@@ -8,10 +8,6 @@
     {
       "source": "/api/tse/oficial/comum/config/:path*",
       "destination": "https://resultados.tse.jus.br/oficial/comum/config/:path*"
-    },
-    {
-      "source": "/anuncie",
-      "destination": "/index.html"
     }
   ],
   "headers": [

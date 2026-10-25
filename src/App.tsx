@@ -15,7 +15,6 @@ import {
   type LegendItem,
   type MapSummary,
 } from './components/Chrome';
-import { AdBalloon } from './components/AdBalloon';
 import { Dock } from './components/Dock';
 import { hasStarted } from './lib/ui/turnout';
 import { StatusPill } from './components/Status';
@@ -514,9 +513,6 @@ export default function App() {
             subscribe={subscribeZoom}
           />
 
-          {/* balão de anúncio: canto direito, logo acima do dock */}
-          <AdBalloon align="right" className="absolute right-(--edge) z-40" style={{ bottom: insets.bottom + 4 }} />
-
           <div className="pointer-events-none absolute inset-x-(--edge) bottom-(--edge) z-20 flex justify-center">
             <div ref={dockRef} className="w-full max-w-[1100px]">
               {dock}
@@ -599,7 +595,6 @@ export default function App() {
       </button>
 
       <Credit variant="chip" className="pointer-events-auto absolute left-2 z-20" style={{ bottom: peek + 16 }} />
-      <AdBalloon align="left" className="absolute left-2 z-40" style={{ bottom: peek + 56 }} />
 
       <div ref={dockRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-30">
         {dock}
