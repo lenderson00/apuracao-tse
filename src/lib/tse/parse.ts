@@ -24,14 +24,31 @@ export function parseTurnout(raw: TseResultFile): TurnoutStats {
   const sectionsPct = pctFromField(raw.s?.pstn, raw.s?.pst);
   const electorate = num(raw.e?.te);
   const abstentions = num(raw.e?.a);
-  const abstentionPct = pctFromField(raw.e?.pan, raw.e?.pa);
-  const turnout = electorate - abstentions;
-  const turnoutPct = electorate > 0 ? (turnout / electorate) * 100 : 0;
+  const comparecimento = num(raw.e?.c);
   const validVotes = num(raw.v?.vv);
   const blank = num(raw.v?.vb);
-  const blankPct = pctFromField(undefined, raw.v?.pvb);
   const nullVotes = num(raw.v?.vn);
-  const nullPct = pctFromField(undefined, raw.v?.pvn);
+
+  /** TSE só publica comparecimento/abstenção úteis após início da apuração. */
+  const apurationStarted =
+    sectionsCounted > 0 || validVotes > 0 || comparecimento > 0;
+
+  let turnoutPct: number | null = null;
+  let abstentionPct: number | null = null;
+  let blankPct: number | null = null;
+  let nullPct: number | null = null;
+
+  if (apurationStarted) {
+    abstentionPct = pctFromField(raw.e?.pan, raw.e?.pa);
+    turnoutPct = pctFromField(raw.e?.pcn, raw.e?.pc);
+    if (turnoutPct === 0 && comparecimento > 0 && electorate > 0) {
+      turnoutPct = (comparecimento / electorate) * 100;
+    }
+    blankPct = pctFromField(undefined, raw.v?.pvb);
+    nullPct = pctFromField(undefined, raw.v?.pvn);
+  }
+
+  const turnout = comparecimento > 0 ? comparecimento : electorate - abstentions;
 
   return {
     sectionsTotal,
@@ -47,6 +64,7 @@ export function parseTurnout(raw: TseResultFile): TurnoutStats {
     nullVotes,
     nullPct,
     validVotes,
+    apurationStarted,
   };
 }
 
@@ -111,10 +129,34 @@ export function parseResult(
 }
 
 export function leadingCandidate(candidates: CandidateRow[]): CandidateRow | undefined {
-  return candidates[0];
+  return resolveMapLeader(candidates).leader;
 }
 
 export function marginPct(candidates: CandidateRow[]): number {
-  if (candidates.length < 2) return 0;
-  return Math.max(0, candidates[0].percent - candidates[1].percent);
+  return resolveMapLeader(candidates).margin;
+}
+
+export interface MapLeaderResult {
+  leader?: CandidateRow;
+  margin: number;
+  hasLeader: boolean;
+}
+
+/** Líder para cor do mapa: sem votos ou empate no topo → neutro (aguardando). */
+export function resolveMapLeader(candidates: CandidateRow[]): MapLeaderResult {
+  if (candidates.length === 0) {
+    return { margin: 0, hasLeader: false };
+  }
+  const totalVotes = candidates.reduce((sum, c) => sum + c.votes, 0);
+  if (totalVotes === 0) {
+    return { margin: 0, hasLeader: false };
+  }
+  const sorted = [...candidates].sort((a, b) => b.votes - a.votes);
+  const top = sorted[0];
+  const second = sorted[1];
+  if (second && top.votes === second.votes) {
+    return { margin: 0, hasLeader: false };
+  }
+  const margin = second ? Math.max(0, top.percent - second.percent) : 0;
+  return { leader: top, margin, hasLeader: true };
 }

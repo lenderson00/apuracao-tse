@@ -216,8 +216,8 @@ export default function App() {
           </div>
         )}
 
-        <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-          <section className="space-y-3">
+        <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1.12fr)_minmax(0,0.88fr)] lg:gap-8">
+          <section className="flex min-h-0 flex-col gap-3 lg:sticky lg:top-6">
             <BrazilMap
               level={level === 'country' ? 'country' : 'state'}
               ufSlug={ufSlug ?? undefined}
@@ -232,7 +232,7 @@ export default function App() {
             </p>
           </section>
 
-          <aside ref={panelRef}>
+          <aside ref={panelRef} className="min-h-0 w-full">
             <div className="panel p-5 sm:p-6">
               <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border-subtle)] pb-4">
                 <div className="min-w-0">

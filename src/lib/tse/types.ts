@@ -35,14 +35,15 @@ export interface TurnoutStats {
   sectionsPct: number;
   electorate: number;
   abstentions: number;
-  abstentionPct: number;
+  abstentionPct: number | null;
   turnout: number;
-  turnoutPct: number;
+  turnoutPct: number | null;
   blank: number;
-  blankPct: number;
+  blankPct: number | null;
   nullVotes: number;
-  nullPct: number;
+  nullPct: number | null;
   validVotes: number;
+  apurationStarted: boolean;
 }
 
 export interface ParsedResult {

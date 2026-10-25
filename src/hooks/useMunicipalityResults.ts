@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchResult } from '../lib/tse/client';
-import { parseResult } from '../lib/tse/parse';
+import { parseResult, resolveMapLeader } from '../lib/tse/parse';
 import type { MunicipalityRef, OfficeId, Round } from '../lib/tse/types';
 
 export interface MunLeader {
@@ -11,6 +11,7 @@ export interface MunLeader {
   leaderColor: string;
   leaderPct: number;
   margin: number;
+  hasLeader: boolean;
   loading: boolean;
 }
 
@@ -39,6 +40,7 @@ export function useMunicipalityResults(
         leaderColor: '#3f3f46',
         leaderPct: 0,
         margin: 0,
+        hasLeader: false,
         loading: true,
       };
     }
@@ -58,18 +60,18 @@ export function useMunicipalityResults(
               officeId,
               scopeLabel: m.name,
             });
-            const top = parsed.candidates[0];
-            const second = parsed.candidates[1];
+            const resolved = resolveMapLeader(parsed.candidates);
             setLeaders((prev) => ({
               ...prev,
               [m.ibgeCode]: {
                 ibgeCode: m.ibgeCode,
                 tseCode: m.tseCode,
                 name: m.name,
-                leaderId: top?.sqcand,
-                leaderColor: top?.color ?? '#3f3f46',
-                leaderPct: top?.percent ?? 0,
-                margin: top && second ? top.percent - second.percent : 0,
+                leaderId: resolved.leader?.sqcand,
+                leaderColor: resolved.leader?.color ?? '#3f3f46',
+                leaderPct: resolved.leader?.percent ?? 0,
+                margin: resolved.margin,
+                hasLeader: resolved.hasLeader,
                 loading: false,
               },
             }));

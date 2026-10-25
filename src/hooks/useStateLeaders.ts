@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchResult } from '../lib/tse/client';
-import { leadingCandidate, marginPct, parseResult } from '../lib/tse/parse';
+import { parseResult, resolveMapLeader } from '../lib/tse/parse';
 import { UF_LIST } from '../lib/tse/config';
 import type { OfficeId, Round } from '../lib/tse/types';
 
@@ -12,6 +12,7 @@ export interface StateLeader {
   leaderPct: number;
   margin: number;
   leaderName?: string;
+  hasLeader: boolean;
   loading: boolean;
 }
 
@@ -31,6 +32,7 @@ export function useStateLeaders(round: Round, officeId: OfficeId, enabled: boole
         leaderColor: '#3f3f46',
         leaderPct: 0,
         margin: 0,
+        hasLeader: false,
         loading: true,
       };
     }
@@ -41,17 +43,18 @@ export function useStateLeaders(round: Round, officeId: OfficeId, enabled: boole
         try {
           const raw = await fetchResult(round, officeId, 'uf', uf.slug);
           const parsed = parseResult(raw, { round, officeId, scopeLabel: uf.name });
-          const lead = leadingCandidate(parsed.candidates);
+          const resolved = resolveMapLeader(parsed.candidates);
           setMap((prev) => ({
             ...prev,
             [uf.slug]: {
               slug: uf.slug,
               sigla: uf.sigla,
               name: uf.name,
-              leaderColor: lead?.color ?? '#3f3f46',
-              leaderPct: lead?.percent ?? 0,
-              margin: marginPct(parsed.candidates),
-              leaderName: lead?.shortName,
+              leaderColor: resolved.leader?.color ?? '#3f3f46',
+              leaderPct: resolved.leader?.percent ?? 0,
+              margin: resolved.margin,
+              leaderName: resolved.leader?.shortName,
+              hasLeader: resolved.hasLeader,
               loading: false,
             },
           }));

@@ -18,12 +18,22 @@ interface Props {
   onSelectMunicipality: (tseCode: string, name: string) => void;
 }
 
+const MAP_NEUTRAL = 'var(--color-map-neutral)';
+
 function mixColor(hex: string, amount: number): string {
   const c = d3.color(hex);
   if (!c) return hex;
   const darker = d3.color(hex)?.darker(0.35);
   if (!amount || !darker) return c.formatHex();
   return d3.interpolateRgb(darker, c)(Math.min(1, amount / 1.4)).toString();
+}
+
+function regionFill(
+  lead: { leaderColor: string; margin: number; hasLeader: boolean } | undefined,
+  marginScale: number,
+): string {
+  if (!lead?.hasLeader) return MAP_NEUTRAL;
+  return mixColor(lead.leaderColor, lead.margin ? Math.min(1, lead.margin / marginScale) : 0);
 }
 
 export function BrazilMap({
@@ -48,7 +58,8 @@ export function BrazilMap({
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
       const { width } = entry.contentRect;
-      setSize({ w: Math.max(320, width), h: Math.max(280, width * 0.65) });
+      const aspect = width >= 900 ? 0.82 : 0.68;
+      setSize({ w: Math.max(320, width), h: Math.max(280, width * aspect) });
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -101,11 +112,11 @@ export function BrazilMap({
         if (level === 'country') {
           const sigla = (features[i].properties as { sigla?: string })?.sigla?.toLowerCase();
           const lead = sigla ? stateLeaders[sigla] : undefined;
-          return mixColor(lead?.leaderColor ?? '#5c5a56', lead?.margin ? Math.min(1, lead.margin / 18) : 0);
+          return regionFill(lead, 18);
         }
         const ibge = String((features[i].properties as { id?: string })?.id ?? '');
         const lead = munLeaders?.[ibge];
-        return mixColor(lead?.leaderColor ?? '#4a4844', lead?.margin ? Math.min(1, lead.margin / 14) : 0);
+        return regionFill(lead, 14);
       })
       .attr('stroke', 'var(--color-border)')
       .attr('stroke-width', level === 'country' ? 0.75 : 0.4)
@@ -117,11 +128,19 @@ export function BrazilMap({
         if (level === 'country') {
           const slug = props.sigla?.toLowerCase();
           const lead = slug ? stateLeaders[slug] : undefined;
-          if (lead?.leaderName) sub = `${lead.leaderName} · ${lead.leaderPct.toFixed(1)}%`;
+          if (lead && !lead.loading) {
+            sub = lead.hasLeader && lead.leaderName
+              ? `${lead.leaderName} · ${lead.leaderPct.toFixed(1)}%`
+              : 'aguardando apuração';
+          }
         } else {
           const ibge = String(props.id ?? '');
           const lead = munLeaders?.[ibge];
-          if (lead && !lead.loading) sub = `${lead.leaderPct.toFixed(1)}% · margem ${lead.margin.toFixed(1)} pp`;
+          if (lead && !lead.loading) {
+            sub = lead.hasLeader
+              ? `${lead.leaderPct.toFixed(1)}% · margem ${lead.margin.toFixed(1)} pp`
+              : 'aguardando apuração';
+          }
         }
         setTooltip({ x: event.offsetX, y: event.offsetY, title, sub });
       })
@@ -155,7 +174,7 @@ export function BrazilMap({
   }, [level, ufSlug]);
 
   return (
-    <div className="panel relative w-full overflow-hidden">
+    <div className="panel relative w-full overflow-hidden lg:min-h-0">
       <div className="flex items-center justify-between border-b border-[var(--color-border-subtle)] px-4 py-3">
         <p className="label-mono">
           {level === 'country' ? 'mapa · brasil' : `mapa · ${ufSlug?.toUpperCase() ?? 'UF'}`}

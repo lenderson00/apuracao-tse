@@ -11,21 +11,36 @@ function int(n: number) {
 }
 
 const PRIMARY = [
-  { key: 'sections', label: 'Urnas apuradas', format: pct },
-  { key: 'turnout', label: 'Comparecimento', format: pct },
-  { key: 'abstention', label: 'Abstenção', format: pct },
+  { key: 'sections', label: 'Urnas apuradas', format: pct, nullable: false },
+  { key: 'turnout', label: 'Comparecimento', format: pct, nullable: true },
+  { key: 'abstention', label: 'Abstenção', format: pct, nullable: true },
 ] as const;
 
 const SECONDARY = [
-  { key: 'blank', label: 'Brancos', format: pct },
-  { key: 'null', label: 'Nulos', format: pct },
-  { key: 'electorate', label: 'Eleitorado', format: int },
+  { key: 'blank', label: 'Brancos', format: pct, nullable: true },
+  { key: 'null', label: 'Nulos', format: pct, nullable: true },
+  { key: 'electorate', label: 'Eleitorado', format: int, nullable: false },
 ] as const;
+
+function StatValue({
+  value,
+  format,
+  showPlaceholder,
+}: {
+  value: number;
+  format: (n: number) => string;
+  showPlaceholder: boolean;
+}) {
+  if (showPlaceholder) {
+    return <span className="text-[var(--color-muted)]">—</span>;
+  }
+  return <AnimatedNumber value={value} format={format} />;
+}
 
 export function StatsGrid({ turnout }: { turnout: TurnoutStats }) {
   const [showMore, setShowMore] = useState(false);
 
-  const valueMap: Record<string, number> = {
+  const valueMap: Record<string, number | null> = {
     sections: turnout.sectionsPct,
     turnout: turnout.turnoutPct,
     abstention: turnout.abstentionPct,
@@ -48,25 +63,41 @@ export function StatsGrid({ turnout }: { turnout: TurnoutStats }) {
         </button>
       </div>
       <div className="grid grid-cols-3 gap-2">
-        {PRIMARY.map((item) => (
-          <div key={item.key} className="panel-muted px-3 py-2.5">
-            <p className="text-[10px] font-medium text-[var(--color-muted)]">{item.label}</p>
-            <p className="mt-1 text-base font-semibold tabular-nums sm:text-lg">
-              <AnimatedNumber value={valueMap[item.key]} format={item.format} />
-            </p>
-          </div>
-        ))}
+        {PRIMARY.map((item) => {
+          const raw = valueMap[item.key];
+          const showPlaceholder = item.nullable && (raw === null || !turnout.apurationStarted);
+          return (
+            <div key={item.key} className="panel-muted px-3 py-2.5">
+              <p className="text-[10px] font-medium text-[var(--color-muted)]">{item.label}</p>
+              <p className="mt-1 text-base font-semibold tabular-nums sm:text-lg">
+                <StatValue
+                  value={raw ?? 0}
+                  format={item.format}
+                  showPlaceholder={showPlaceholder}
+                />
+              </p>
+            </div>
+          );
+        })}
       </div>
       {showMore && (
         <div className="grid grid-cols-3 gap-2">
-          {SECONDARY.map((item) => (
-            <div key={item.key} className="panel-muted px-3 py-2.5">
-              <p className="text-[10px] font-medium text-[var(--color-muted)]">{item.label}</p>
-              <p className="mt-1 text-base font-semibold tabular-nums">
-                <AnimatedNumber value={valueMap[item.key]} format={item.format} />
-              </p>
-            </div>
-          ))}
+          {SECONDARY.map((item) => {
+            const raw = valueMap[item.key];
+            const showPlaceholder = item.nullable && (raw === null || !turnout.apurationStarted);
+            return (
+              <div key={item.key} className="panel-muted px-3 py-2.5">
+                <p className="text-[10px] font-medium text-[var(--color-muted)]">{item.label}</p>
+                <p className="mt-1 text-base font-semibold tabular-nums">
+                  <StatValue
+                    value={raw ?? 0}
+                    format={item.format}
+                    showPlaceholder={showPlaceholder}
+                  />
+                </p>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
