@@ -8,9 +8,9 @@ export interface AdFields {
   mensagem: string;
 }
 
-/** Monta o mailto com assunto e corpo já preenchidos (tudo codificado). */
-export function buildMailto(f: AdFields): string {
-  const body = [
+/** Texto da mensagem (o mesmo do e-mail e do botão de copiar). */
+export function buildBody(f: AdFields): string {
+  return [
     'Oi, Lenderson. Quero anunciar no site da apuração.',
     '',
     `Nome: ${f.nome.trim()}`,
@@ -20,6 +20,11 @@ export function buildMailto(f: AdFields): string {
     'Mensagem:',
     f.mensagem.trim() || '-',
   ].join('\n');
+}
+
+/** Monta o mailto com assunto e corpo já preenchidos (tudo codificado). */
+export function buildMailto(f: AdFields): string {
+  const body = buildBody(f);
   return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(SUBJECT)}&body=${encodeURIComponent(body)}`;
 }
 

@@ -3,11 +3,12 @@ import gsap from 'gsap';
 import { Mark } from '../components/Chrome';
 import { Icon } from '../components/ui/Icon';
 import { dur } from '../lib/ui/motion';
-import { buildMailto, CONTACT_EMAIL, type AdFields } from '../lib/ui/mailto';
+import { buildBody, buildMailto, type AdFields } from '../lib/ui/mailto';
 
 export default function Anuncie() {
   const [f, setF] = useState<AdFields>({ nome: '', marca: '', contato: '', mensagem: '' });
   const [sent, setSent] = useState(false);
+  const [copied, setCopied] = useState(false);
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -26,7 +27,10 @@ export default function Anuncie() {
     return () => ctx.revert();
   }, []);
 
-  const set = (k: keyof AdFields) => (e: { target: { value: string } }) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const set = (k: keyof AdFields) => (e: { target: { value: string } }) => {
+    setCopied(false);
+    setF((p) => ({ ...p, [k]: e.target.value }));
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -87,21 +91,19 @@ export default function Anuncie() {
             Enviar por e-mail
           </button>
           <p className="text-caption leading-relaxed text-ink-3" aria-live="polite">
-            {sent ? (
-              <>
-                Abri o seu app de e-mail com a mensagem pronta. Se nada abriu, escreva para{' '}
-                <a href={`mailto:${CONTACT_EMAIL}`} className="text-ink-2 underline underline-offset-2">
-                  {CONTACT_EMAIL}
-                </a>
-                .
-              </>
-            ) : (
-              <>
-                O botão abre o seu app de e-mail com tudo preenchido para{' '}
-                <span className="text-ink-2">{CONTACT_EMAIL}</span>.
-              </>
-            )}
+            {sent ? 'Abri o seu app de e-mail com a mensagem pronta.' : 'O botão abre o seu app de e-mail com a mensagem pronta.'}
           </p>
+          {sent && (
+            <button
+              type="button"
+              className="btn btn-outline h-10 w-full"
+              onClick={() => {
+                void navigator.clipboard?.writeText(buildBody(f)).then(() => setCopied(true));
+              }}
+            >
+              {copied ? 'Mensagem copiada' : 'Copiar mensagem'}
+            </button>
+          )}
         </form>
       </div>
     </div>
