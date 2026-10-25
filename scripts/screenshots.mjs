@@ -1,52 +1,76 @@
+/**
+ * Gera as capturas do README em ./docs.
+ * Uso: com o dev server rodando (npm run dev, porta 4321), `node scripts/screenshots.mjs`.
+ */
 import { chromium } from 'playwright';
 import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 
-const base = 'http://127.0.0.1:4321';
-const out = '/opt/cursor/artifacts/screenshots';
-await mkdir(out, { recursive: true });
+const base = process.env.BASE_URL ?? 'http://127.0.0.1:4321';
+const docs = join(process.cwd(), 'docs');
+await mkdir(docs, { recursive: true });
 
 const browser = await chromium.launch();
-const page = await browser.newPage();
 
-async function clickUf(sigla) {
-  await page.evaluate((uf) => {
-    const paths = [...document.querySelectorAll('path.map-region')];
-    const features = paths;
-    // Match by firing click on path - we stored sigla in feature properties only in d3 data, not DOM
-    // Use bbox: find path whose centroid label matches - instead click via script reading last rendered titles
-    return null;
-  }, sigla);
-  const box = await page.locator('svg').boundingBox();
-  if (!box) return;
-  const coords = {
-    sp: { x: box.x + box.width * 0.55, y: box.y + box.height * 0.72 },
-    mg: { x: box.x + box.width * 0.62, y: box.y + box.height * 0.58 },
-  };
-  const c = coords[sigla] ?? coords.sp;
-  await page.mouse.click(c.x, c.y);
+async function ready(page) {
+  await page.goto(base, { waitUntil: 'load', timeout: 90000 });
+  await page.waitForSelector('path.map-region[data-uf]', { timeout: 30000 });
+  await page.waitForTimeout(3000);
 }
 
-await page.setViewportSize({ width: 1280, height: 800 });
-await page.goto(base, { waitUntil: 'networkidle', timeout: 90000 });
-await page.waitForSelector('path.map-region', { timeout: 30000 });
-await page.waitForTimeout(2500);
-await page.screenshot({ path: `${out}/desktop-main.png`, fullPage: true });
+async function focusState(page, uf, { touch = false } = {}) {
+  const region = page.locator(`path.map-region[data-uf="${uf}"]`);
+  if (touch) {
+    const box = await region.boundingBox();
+    await page.touchscreen.tap(box.x + box.width * 0.5, box.y + box.height * 0.45);
+  } else {
+    await region.click({ force: true });
+  }
+  await page.waitForSelector('path.map-region[data-kind="mun"]', { timeout: 30000 });
+  await page.waitForTimeout(5000);
+}
 
-await clickUf('sp');
-await page.waitForTimeout(4000);
-await page.screenshot({ path: `${out}/desktop-state.png`, fullPage: true });
+async function focusMunicipality(page, ibge, { touch = false } = {}) {
+  const region = page.locator(`path.map-region[data-kind="mun"][data-id="${ibge}"]`);
+  if (touch) {
+    const box = await region.boundingBox();
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  } else {
+    await region.click({ force: true });
+  }
+  await page.waitForTimeout(2500);
+}
 
-await page.mouse.click(640, 360);
-await page.waitForTimeout(2000);
-await page.screenshot({ path: `${out}/desktop-municipality.png`, fullPage: true });
+// Desktop 1440x900: Brasil, zoom em SP, zoom em Campinas (IBGE 3509502)
+{
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await ready(page);
+  await page.mouse.move(10, 450);
+  await page.screenshot({ path: join(docs, 'desktop-main.png') });
+  await focusState(page, 'sp');
+  await page.mouse.move(10, 450);
+  await page.screenshot({ path: join(docs, 'desktop-state.png') });
+  await focusMunicipality(page, '3509502');
+  await page.mouse.move(10, 450);
+  await page.screenshot({ path: join(docs, 'desktop-municipality.png') });
+  await page.close();
+}
 
-await page.setViewportSize({ width: 390, height: 844 });
-await page.goto(base, { waitUntil: 'networkidle' });
-await page.waitForTimeout(2000);
-await page.screenshot({ path: `${out}/mobile-main.png`, fullPage: true });
-await clickUf('sp');
-await page.waitForTimeout(3500);
-await page.screenshot({ path: `${out}/mobile-state.png`, fullPage: true });
+// Mobile 390x844
+{
+  const ctx = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+    deviceScaleFactor: 2,
+  });
+  const page = await ctx.newPage();
+  await ready(page);
+  await page.screenshot({ path: join(docs, 'mobile-main.png') });
+  await focusState(page, 'sp', { touch: true });
+  await page.screenshot({ path: join(docs, 'mobile-state.png') });
+  await ctx.close();
+}
 
 await browser.close();
-console.log('Saved screenshots to', out);
+console.log('Capturas salvas em', docs);

@@ -9,10 +9,10 @@ Acompanhe a apuração das Eleições Gerais 2026 com mapa interativo e números
 ## O que tem aqui
 
 - **Painel nacional** por turno e cargo (Presidente no 2º turno por padrão): candidatos com foto do TSE, votos, percentual, barras, urnas apuradas, comparecimento, abstenção, brancos e nulos, horário da última atualização (Brasília).
-- **Mapa do Brasil** com estados coloridos pelo líder e intensidade pela margem; clique no estado para ver municípios; painel lateral com o recorte selecionado; breadcrumb para voltar.
+- **Mapa do Brasil em tela cheia**, como um canvas: arraste, roda do mouse ou pinça para navegar. Estados coloridos pelo líder e intensidade pela margem; ao aproximar de um estado aparecem os municípios, e o painel de baixo troca sozinho para o recorte em foco. Breadcrumb e Esc para voltar.
 - **Busca** de município por nome.
 - **Atualização automática** a cada 60 segundos enquanto a apuração segue, com transições suaves nos números (GSAP).
-- **Tema claro/escuro**, layout responsivo, textos em português do Brasil.
+- **Tema escuro**, tudo em uma tela (desktop e celular), textos em português do Brasil.
 
 ![Drill-down — estado (SP)](docs/desktop-state.png)
 
