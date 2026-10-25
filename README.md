@@ -1,5 +1,7 @@
 # Apuração 2026
 
+**Ver ao vivo:** [https://apuracao-tse.vercel.app](https://apuracao-tse.vercel.app)
+
 Acompanhe a apuração das Eleições Gerais 2026 com mapa interativo e números direto do TSE — sem cadastro e sem inventar voto.
 
 ![Visão nacional — desktop](docs/desktop-main.png)
