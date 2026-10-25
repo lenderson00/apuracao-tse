@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { candFill, mapFill } from '../lib/ui/color';
+import { candFill } from '../lib/ui/color';
 import { titleCase } from '../lib/ui/format';
 
 export interface LegendItem {
@@ -12,39 +12,46 @@ export interface LegendItem {
 interface Props {
   items: LegendItem[];
   unit: string;
+  hasError?: boolean;
+  layout?: 'stack' | 'row';
   className?: string;
 }
 
-export function MapLegend({ items, unit, className }: Props) {
+/** Legenda: cor de cada candidato com quantas áreas lidera, mais os estados sem cor. */
+export function MapLegend({ items, unit, hasError, layout = 'stack', className }: Props) {
+  const row = layout === 'row';
   return (
-    <div className={clsx('flex flex-col gap-3', className)}>
-      <ul className="flex flex-wrap gap-x-4 gap-y-2">
-        {items.map((it) => (
-          <li key={it.key} className="flex items-center gap-2 text-caption text-ink-2">
-            <span className="size-2.5 rounded-[3px]" style={{ background: candFill(it.color) }} aria-hidden />
-            <span className="font-medium text-ink">{titleCase(it.name)}</span>
-            <span className="tnum font-mono text-micro text-ink-3">
-              {it.count} {unit}
-            </span>
-          </li>
-        ))}
-        <li className="flex items-center gap-2 text-caption text-ink-3">
-          <span className="size-2.5 rounded-[3px] bg-map-neutral shadow-[inset_0_0_0_1px_var(--line)]" aria-hidden />
-          Sem votos ou empate
-        </li>
-      </ul>
-      {items[0] && (
-        <div className="flex items-center gap-2 font-mono text-micro text-ink-3">
-          <span>vantagem</span>
-          <span
-            className="h-1.5 w-16 rounded-full"
-            style={{
-              background: `linear-gradient(90deg, ${mapFill(items[0].color, 0)}, ${mapFill(items[0].color, 1)})`,
-            }}
-            aria-hidden
-          />
-          <span>maior</span>
-        </div>
+    <div
+      className={clsx(
+        row ? 'flex items-center gap-x-3 gap-y-1' : 'float flex w-52 flex-col gap-1.5 rounded-xl px-3 py-2.5',
+        className,
+      )}
+      aria-label="Legenda do mapa"
+    >
+      {!row && <p className="eyebrow mb-0.5">Quem lidera</p>}
+      {items.map((it) => (
+        <p key={it.key} className="flex items-center gap-2 whitespace-nowrap text-caption">
+          <span className="size-2.5 shrink-0 rounded-[3px]" style={{ background: candFill(it.color) }} aria-hidden />
+          <span className="min-w-0 flex-1 truncate font-medium text-ink">{titleCase(it.name)}</span>
+          <span className="tnum font-mono text-nano text-ink-3">
+            {it.count} {unit}
+          </span>
+        </p>
+      ))}
+      <p className="flex items-center gap-2 whitespace-nowrap text-caption text-ink-3">
+        <span className="size-2.5 shrink-0 rounded-[3px] bg-map-neutral" aria-hidden />
+        Sem votos ou empate
+      </p>
+      {hasError && (
+        <p className="flex items-center gap-2 whitespace-nowrap text-caption text-ink-3">
+          <svg width="10" height="10" className="shrink-0 rounded-[3px]" aria-hidden>
+            <rect width="10" height="10" fill="url(#map-hatch)" />
+          </svg>
+          Sem resposta do TSE
+        </p>
+      )}
+      {!row && items[0] && (
+        <p className="mt-1 border-t border-line pt-1.5 text-nano text-ink-3">Cor mais forte, vantagem maior</p>
       )}
     </div>
   );

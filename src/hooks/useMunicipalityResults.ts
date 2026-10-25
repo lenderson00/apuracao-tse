@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchResult } from '../lib/tse/client';
 import { parseResult, resolveMapLeader } from '../lib/tse/parse';
+import { MAP_NOTE, NEUTRAL_COLOR } from './useStateLeaders';
 import type { MunicipalityRef, OfficeId, Round } from '../lib/tse/types';
 
 export interface MunLeader {
@@ -11,7 +12,7 @@ export interface MunLeader {
   leaderColor: string;
   leaderPct: number;
   margin: number;
-  hasLeader: boolean;
+  note?: string;
   loading: boolean;
 }
 
@@ -40,7 +41,6 @@ export function useMunicipalityResults(
         leaderColor: '#3f3f46',
         leaderPct: 0,
         margin: 0,
-        hasLeader: false,
         loading: true,
       };
     }
@@ -60,18 +60,18 @@ export function useMunicipalityResults(
               officeId,
               scopeLabel: m.name,
             });
-            const resolved = resolveMapLeader(parsed.candidates);
+            const { leader: top, margin, reason } = resolveMapLeader(parsed.candidates);
             setLeaders((prev) => ({
               ...prev,
               [m.ibgeCode]: {
                 ibgeCode: m.ibgeCode,
                 tseCode: m.tseCode,
                 name: m.name,
-                leaderId: resolved.leader?.sqcand,
-                leaderColor: resolved.leader?.color ?? '#3f3f46',
-                leaderPct: resolved.leader?.percent ?? 0,
-                margin: resolved.margin,
-                hasLeader: resolved.hasLeader,
+                leaderId: top?.sqcand,
+                leaderColor: top?.color ?? NEUTRAL_COLOR,
+                leaderPct: top?.percent ?? 0,
+                margin,
+                note: reason ? MAP_NOTE[reason] : undefined,
                 loading: false,
               },
             }));

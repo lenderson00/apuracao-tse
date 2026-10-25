@@ -1,34 +1,68 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
-import clsx from 'clsx';
-import { geoMercator, geoPath, type GeoPath, type GeoProjection } from 'd3-geo';
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react';
+import * as d3 from 'd3';
+import { geoContains, geoMercator, geoPath, type GeoPath, type GeoProjection } from 'd3-geo';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import gsap from 'gsap';
-import type { MunLeader } from '../hooks/useMunicipalityResults';
-import type { StateLeader } from '../hooks/useStateLeaders';
-import { MAP_NEUTRAL, mapFill } from '../lib/ui/color';
+import { candFill } from '../lib/ui/color';
 import { titleCase } from '../lib/ui/format';
-import { DUR, dur, prefersReducedMotion } from '../lib/ui/motion';
+import { prefersReducedMotion } from '../lib/ui/motion';
+import type { RegionView } from '../lib/ui/regions';
 import { MapTooltip, type HoverInfo } from './MapTooltip';
-import { Skeleton } from './ui/Skeleton';
 
-interface Props {
-  ufSlug?: string;
-  selectedIbge?: string;
-  stateLeaders: Record<string, StateLeader>;
-  munLeaders?: Record<string, MunLeader>;
-  /** sqcand → nome/cor, para o tooltip dos municípios */
-  candidateNames: Record<string, { name: string; color: string }>;
-  /** área coberta por painéis (px) que o zoom deve evitar */
-  insetRight?: number;
-  insetTop?: number;
-  awaiting: boolean;
-  /** estados sem disputa neste cargo/turno (ex.: governador no 2º turno) */
-  disabledStates?: Set<string>;
-  onSelectState: (slug: string) => void;
-  onSelectMunicipality: (tseCode: string, name: string) => void;
+/* -------------------------------------------------------------------------- */
+/* tipos públicos                                                              */
+
+export type CameraTarget =
+  | { kind: 'country' }
+  | { kind: 'state'; uf: string }
+  | { kind: 'mun'; uf: string; ibge: string };
+
+export interface Camera {
+  target: CameraTarget;
+  /** muda a cada pedido de voo, mesmo para o mesmo alvo */
+  seq: number;
 }
 
-type GeoFC = FeatureCollection<Geometry, Record<string, string>>;
+export type MapLevel = 'country' | 'state' | 'mun';
+
+export interface MapApi {
+  zoomBy: (factor: number) => void;
+  recenter: () => void;
+}
+
+export interface Insets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+interface Props {
+  camera: Camera;
+  /** estado em foco (por clique ou por zoom) — define a camada de municípios */
+  focusUf: string | null;
+  /** município destacado (fixado, em foco ou sob o cursor) */
+  highlightIbge: string | null;
+  stateViews: Record<string, RegionView>;
+  munViews: Record<string, RegionView>;
+  disabledStates?: Set<string>;
+  awaiting: boolean;
+  insets: Insets;
+  touch: boolean;
+  onActivate: (kind: 'state' | 'mun', id: string) => void;
+  onZoomFocus: (uf: string | null) => void;
+  onZoomMun: (ibge: string | null) => void;
+  onHoverMun: (ibge: string | null) => void;
+  onLevel: (level: MapLevel) => void;
+  apiRef?: Ref<MapApi>;
+}
+
+/* -------------------------------------------------------------------------- */
+/* geometria                                                                   */
+
+type Props_ = Record<string, string>;
+type GeoFC = FeatureCollection<Geometry, Props_>;
+type GeoF = Feature<Geometry, Props_>;
 
 const geoCache = new Map<string, Promise<GeoFC>>();
 function loadGeo(url: string): Promise<GeoFC> {
@@ -44,53 +78,84 @@ function loadGeo(url: string): Promise<GeoFC> {
   return p;
 }
 
-function regionFill(lead: { leaderColor: string; margin: number; hasLeader: boolean } | undefined, scale: number) {
-  if (!lead?.hasLeader) return MAP_NEUTRAL;
-  return mapFill(lead.leaderColor, lead.margin / scale);
+/** Mundo fixo: a projeção é calculada uma vez; o zoom cuida da tela. */
+const WORLD = 1000;
+const MAX_K_FACTOR = 90;
+
+interface MunLayer {
+  uf: string;
+  features: GeoF[];
+  g: SVGGElement;
 }
 
-const PAD = 20;
+/* -------------------------------------------------------------------------- */
 
-export function BrazilMap({
-  ufSlug,
-  selectedIbge,
-  stateLeaders,
-  munLeaders,
-  candidateNames,
-  insetRight = 0,
-  insetTop = 56,
-  awaiting,
-  disabledStates,
-  onSelectState,
-  onSelectMunicipality,
-}: Props) {
+export function BrazilMap(props: Props) {
+  const {
+    camera,
+    focusUf,
+    highlightIbge,
+    stateViews,
+    munViews,
+    disabledStates,
+    awaiting,
+    touch,
+    apiRef,
+  } = props;
+
   const wrapRef = useRef<HTMLDivElement>(null);
-  const zoomRef = useRef<SVGGElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const rootRef = useRef<SVGGElement>(null);
   const statesRef = useRef<SVGGElement>(null);
-  const munRef = useRef<SVGGElement>(null);
+  const stateLabelsRef = useRef<SVGGElement>(null);
+  const liftRef = useRef<SVGGElement>(null);
+  const munsRef = useRef<SVGGElement>(null);
+  const overlayRef = useRef<SVGGElement>(null);
+  const munLabelsRef = useRef<SVGGElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
-  const view = useRef({ x: 0, y: 0, k: 1 });
-  const introDone = useRef(false);
 
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const [states, setStates] = useState<GeoFC | null>(null);
   const [geoError, setGeoError] = useState(false);
-  const [mun, setMun] = useState<{ uf: string; fc: GeoFC } | null>(null);
-  const [hover, setHover] = useState<HoverInfo | null>(null);
+  const [munLayerUf, setMunLayerUf] = useState<string | null>(null);
+  const [hover, setHover] = useState<{ kind: 'state' | 'mun'; id: string } | null>(null);
+  const [tap, setTap] = useState<{ kind: 'state' | 'mun'; id: string } | null>(null);
 
-  /* tamanho do contêiner */
+  const proj = useRef<{ projection: GeoProjection; path: GeoPath } | null>(null);
+  const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+  const tRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
+  const countryK = useRef(1);
+  const munLayer = useRef<MunLayer | null>(null);
+  const stateFeatures = useRef<Map<string, GeoF>>(new Map());
+  const levelRef = useRef<MapLevel>('country');
+  const samples = useRef<Array<{ t: number; x: number; y: number }>>([]);
+  const inertiaRaf = useRef(0);
+  const semanticTimer = useRef(0);
+  const introDone = useRef(false);
+  /** o gesto atual (arrasto/roda/pinça) moveu a câmera? */
+  const gestureMoved = useRef(false);
+  /** o usuário mexeu na câmera desde o último voo? (aí não reenquadramos sozinhos) */
+  const userMoved = useRef(false);
+
+  /* refs "vivas" para handlers do D3, sem recriar comportamentos */
+  const live = useRef(props);
+  live.current = props;
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
+
+  /* ---------------------------------------------------------------- tamanho */
   useLayoutEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
+    const ro = new ResizeObserver(([e]) => {
+      const { width, height } = e.contentRect;
       setSize((s) => (s && Math.abs(s.w - width) < 1 && Math.abs(s.h - height) < 1 ? s : { w: width, h: height }));
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  /* geometria dos estados */
+  /* --------------------------------------------------------- geo dos estados */
   useEffect(() => {
     let alive = true;
     loadGeo('/geo/br-states.json')
@@ -101,334 +166,696 @@ export function BrazilMap({
     };
   }, []);
 
-  /* geometria dos municípios do estado escolhido */
+  /* ----------------------------------------------------------- enquadramento */
+  const fitTransform = useCallback((bounds: [[number, number], [number, number]], fill = 0.9, maxK?: number) => {
+    const s = sizeRef.current;
+    if (!s) return d3.zoomIdentity;
+    const ins = live.current.insets;
+    const ax0 = ins.left + 16;
+    const ay0 = ins.top + 12;
+    const ax1 = s.w - ins.right - 16;
+    const ay1 = s.h - ins.bottom - 12;
+    const aw = Math.max(40, ax1 - ax0);
+    const ah = Math.max(40, ay1 - ay0);
+    const [[x0, y0], [x1, y1]] = bounds;
+    let k = fill * Math.min(aw / Math.max(1e-6, x1 - x0), ah / Math.max(1e-6, y1 - y0));
+    if (maxK) k = Math.min(k, maxK);
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    return d3.zoomIdentity.translate(ax0 + aw / 2 - k * cx, ay0 + ah / 2 - k * cy).scale(k);
+  }, []);
+
+  const countryBounds = useCallback((): [[number, number], [number, number]] => {
+    const p = proj.current;
+    if (!p || !states) return [[0, 0], [WORLD, WORLD]];
+    return p.path.bounds(states) as [[number, number], [number, number]];
+  }, [states]);
+
+  const stateFitK = useCallback(
+    (uf: string) => {
+      const f = stateFeatures.current.get(uf);
+      const p = proj.current;
+      if (!f || !p) return countryK.current * 3;
+      return fitTransform(p.path.bounds(f) as [[number, number], [number, number]], 0.88).k;
+    },
+    [fitTransform],
+  );
+
+  /* ---------------------------------------------- semântica do zoom manual */
+  const evaluateSemantic = useCallback(() => {
+    const s = sizeRef.current;
+    const p = proj.current;
+    if (!s || !p) return;
+    const { insets: ins, focusUf: fu, disabledStates: dis } = live.current;
+    const t = tRef.current;
+    const cx = ins.left + (s.w - ins.left - ins.right) / 2;
+    const cy = ins.top + (s.h - ins.top - ins.bottom) / 2;
+    const world = t.invert([cx, cy]);
+    const lonlat = p.projection.invert?.(world as [number, number]);
+    if (!lonlat) return;
+    const rel = t.k / countryK.current;
+
+    if (rel < 1.45) {
+      if (fu) live.current.onZoomFocus(null);
+      return;
+    }
+    if (rel >= 2) {
+      for (const [uf, f] of stateFeatures.current) {
+        if (geoContains(f, lonlat)) {
+          if (uf !== fu && !dis?.has(uf)) live.current.onZoomFocus(uf);
+          break;
+        }
+      }
+    }
+    const layer = munLayer.current;
+    if (fu && layer && layer.uf === fu) {
+      const kState = stateFitK(fu);
+      if (t.k >= kState * 2.4) {
+        const hit = layer.features.find((f) => geoContains(f, lonlat));
+        live.current.onZoomMun(hit ? String(hit.properties.id) : null);
+      } else if (t.k < kState * 1.8) {
+        live.current.onZoomMun(null);
+      }
+    }
+  }, [stateFitK]);
+
+  const scheduleSemantic = useCallback(
+    (delay = 220) => {
+      window.clearTimeout(semanticTimer.current);
+      semanticTimer.current = window.setTimeout(evaluateSemantic, delay);
+    },
+    [evaluateSemantic],
+  );
+
+  /* ------------------------------------------------ rótulos e nível de zoom */
+  const labelRaf = useRef(0);
+  const updateLabels = useCallback(() => {
+    cancelAnimationFrame(labelRaf.current);
+    labelRaf.current = requestAnimationFrame(() => {
+      const k = tRef.current.k;
+      const rel = k / countryK.current;
+      d3.select(stateLabelsRef.current).style('opacity', live.current.focusUf || rel > 3.2 ? 0 : 1);
+      d3.select(munLabelsRef.current)
+        .selectAll<SVGTextElement, { area: number }>('text')
+        .style('opacity', (d) => (d.area * k * k > 5200 ? 1 : 0));
+    });
+  }, []);
+
+  const computeLevel = useCallback(() => {
+    const fu = live.current.focusUf;
+    let level: MapLevel = 'country';
+    if (fu) level = tRef.current.k >= stateFitK(fu) * 2.4 ? 'mun' : 'state';
+    if (level !== levelRef.current) {
+      levelRef.current = level;
+      live.current.onLevel(level);
+    }
+  }, [stateFitK]);
+
+  /* -------------------------------------------- cria estados e zoom (1 vez) */
+  useLayoutEffect(() => {
+    const svgEl = svgRef.current;
+    if (!states || !svgEl || !size || proj.current) return;
+
+    const projection = geoMercator().fitSize([WORLD, WORLD], states);
+    const path = geoPath(projection);
+    proj.current = { projection, path };
+
+    const feats = states.features as GeoF[];
+    stateFeatures.current = new Map(feats.map((f) => [(f.properties.sigla ?? '').toLowerCase(), f]));
+
+    d3.select(statesRef.current)
+      .selectAll<SVGPathElement, GeoF>('path')
+      .data(feats, (d) => d.properties.sigla)
+      .join('path')
+      .attr('class', 'map-region')
+      .attr('d', (d) => path(d) ?? '')
+      .attr('data-kind', 'state')
+      .attr('data-id', (d) => d.properties.sigla.toLowerCase())
+      .attr('data-uf', (d) => d.properties.sigla.toLowerCase())
+      .attr('tabindex', 0)
+      .attr('role', 'button')
+      .attr('stroke-width', 1)
+      .style('fill', 'var(--map-loading)');
+
+    d3.select(stateLabelsRef.current)
+      .selectAll<SVGTextElement, GeoF>('text')
+      .data(feats, (d) => d.properties.sigla)
+      .join('text')
+      .attr('class', 'map-label map-label-uf')
+      .attr('transform', (d) => {
+        const [x, y] = path.centroid(d);
+        return `translate(${x},${y})`;
+      })
+      .text((d) => d.properties.sigla);
+
+    const svg = d3.select(svgEl);
+    const zoom = d3
+      .zoom<SVGSVGElement, unknown>()
+      .on('start', (ev: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
+        if (ev.sourceEvent) {
+          cancelAnimationFrame(inertiaRaf.current);
+          samples.current = [];
+          gestureMoved.current = false;
+        }
+      })
+      .on('zoom', (ev: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
+        const t = ev.transform;
+        if (ev.sourceEvent) {
+          if (!gestureMoved.current) setTap(null);
+          gestureMoved.current = true;
+          userMoved.current = true;
+        }
+        tRef.current = t;
+        rootRef.current?.setAttribute('transform', t.toString());
+        rootRef.current?.style.setProperty('--k', String(t.k));
+        // grade de pontos acompanha a câmera, repetindo a cada oitava de zoom
+        const wrap = wrapRef.current;
+        if (wrap) {
+          const rel = t.k / countryK.current;
+          const gs = 22 * Math.pow(2, ((Math.log2(rel) % 1) + 1) % 1);
+          wrap.style.setProperty('--gs', `${gs}px`);
+          wrap.style.setProperty('--gx', `${t.x % gs}px`);
+          wrap.style.setProperty('--gy', `${t.y % gs}px`);
+        }
+        const se = ev.sourceEvent as (Event & { clientX?: number; clientY?: number }) | null;
+        if (se && (se.type === 'mousemove' || se.type === 'touchmove' || se.type === 'pointermove')) {
+          const now = performance.now();
+          samples.current.push({ t: now, x: t.x, y: t.y });
+          if (samples.current.length > 6) samples.current.shift();
+          if (tipRef.current) tipRef.current.style.opacity = '0';
+        }
+        updateLabels();
+        computeLevel();
+      })
+      .on('end', (ev: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
+        if (!ev.sourceEvent || !gestureMoved.current) return;
+        gestureMoved.current = false;
+        if (tipRef.current) tipRef.current.style.opacity = '';
+        // inércia: continua o arrasto com a velocidade do fim do gesto
+        const sm = samples.current.filter((s) => performance.now() - s.t < 90);
+        samples.current = [];
+        if (!prefersReducedMotion() && sm.length >= 2) {
+          const a = sm[0];
+          const b = sm[sm.length - 1];
+          const dt = Math.max(1, b.t - a.t);
+          let vx = ((b.x - a.x) / dt) * 16;
+          let vy = ((b.y - a.y) / dt) * 16;
+          if (Math.hypot(vx, vy) > 2) {
+            const step = () => {
+              vx *= 0.9;
+              vy *= 0.9;
+              const k = tRef.current.k;
+              svg.call(zoom.translateBy, vx / k, vy / k);
+              if (Math.hypot(vx, vy) > 0.4) inertiaRaf.current = requestAnimationFrame(step);
+              else scheduleSemantic(60);
+            };
+            inertiaRaf.current = requestAnimationFrame(step);
+            return;
+          }
+        }
+        scheduleSemantic();
+      });
+    zoom.filter((ev: Event & { button?: number; ctrlKey?: boolean }) => (!ev.ctrlKey || ev.type === 'wheel') && !ev.button);
+    svg.call(zoom).on('dblclick.zoom', null);
+    zoomRef.current = zoom;
+
+    // enquadra o país (com uma entrada discreta)
+    const fit = fitTransform(path.bounds(states) as [[number, number], [number, number]], 0.92);
+    countryK.current = fit.k;
+    zoom.scaleExtent([fit.k * 0.6, fit.k * MAX_K_FACTOR]);
+    if (prefersReducedMotion()) {
+      svg.call(zoom.transform, fit);
+    } else {
+      svg.call(zoom.transform, fitTransform(path.bounds(states) as [[number, number], [number, number]], 0.8));
+      svg.transition().duration(1100).ease(d3.easeCubicOut).call(zoom.transform, fit);
+      gsap.fromTo(statesRef.current, { opacity: 0 }, { opacity: 1, duration: 0.9, ease: 'power2.out', clearProps: 'opacity' });
+    }
+    introDone.current = true;
+  }, [states, size, fitTransform, updateLabels, computeLevel, scheduleSemantic]);
+
+  /* --------------------------------------------------------- voo da câmera */
+  const flyTo = useCallback(
+    (target: CameraTarget, animate = true) => {
+      const svgEl = svgRef.current;
+      const zoom = zoomRef.current;
+      const p = proj.current;
+      if (!svgEl || !zoom || !p || !states) return false;
+      let t: d3.ZoomTransform | null = null;
+      if (target.kind === 'country') {
+        t = fitTransform(countryBounds(), 0.92);
+      } else if (target.kind === 'state') {
+        const f = stateFeatures.current.get(target.uf);
+        if (f) t = fitTransform(p.path.bounds(f) as [[number, number], [number, number]], 0.88);
+      } else {
+        const layer = munLayer.current;
+        const f = layer?.uf === target.uf ? layer.features.find((x) => String(x.properties.id) === target.ibge) : undefined;
+        if (!f) return false;
+        t = fitTransform(p.path.bounds(f) as [[number, number], [number, number]], 0.32, stateFitK(target.uf) * 7);
+      }
+      if (!t) return false;
+      userMoved.current = false;
+      cancelAnimationFrame(inertiaRaf.current);
+      const svg = d3.select(svgEl);
+      svg.interrupt();
+      if (!animate || prefersReducedMotion()) {
+        svg.call(zoom.transform, t);
+      } else {
+        const s = sizeRef.current!;
+        const cur = tRef.current;
+        const p0: [number, number, number] = [(s.w / 2 - cur.x) / cur.k, (s.h / 2 - cur.y) / cur.k, s.w / cur.k];
+        const p1: [number, number, number] = [(s.w / 2 - t.x) / t.k, (s.h / 2 - t.y) / t.k, s.w / t.k];
+        const dur = Math.max(650, Math.min(1500, d3.interpolateZoom(p0, p1).duration * 0.85));
+        svg.transition().duration(dur).ease(d3.easeCubicInOut).call(zoom.transform, t);
+      }
+      return true;
+    },
+    [states, fitTransform, countryBounds, stateFitK],
+  );
+
+  const pendingCamera = useRef<Camera | null>(null);
   useEffect(() => {
-    if (!ufSlug) return;
+    if (!proj.current) {
+      pendingCamera.current = camera;
+      return;
+    }
+    if (!flyTo(camera.target)) pendingCamera.current = camera;
+    else pendingCamera.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera.seq, flyTo]);
+
+  /* reenquadra sem animação quando o tamanho muda */
+  const lastSize = useRef<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    if (!size || !proj.current || !states) return;
+    const prev = lastSize.current;
+    lastSize.current = size;
+    countryK.current = fitTransform(countryBounds(), 0.92).k;
+    zoomRef.current?.scaleExtent([countryK.current * 0.6, countryK.current * MAX_K_FACTOR]);
+    if (prev && (prev.w !== size.w || prev.h !== size.h)) flyTo(live.current.camera.target, false);
+  }, [size, states, fitTransform, countryBounds, flyTo]);
+
+  /* dock ou toolbar mudaram de altura: reenquadra se o usuário não mexeu */
+  const insetsKey = `${props.insets.top}|${props.insets.bottom}|${props.insets.right}`;
+  const firstInsets = useRef(true);
+  useEffect(() => {
+    if (firstInsets.current) {
+      firstInsets.current = false;
+      return;
+    }
+    if (!proj.current || userMoved.current) return;
+    const id = window.setTimeout(() => {
+      if (!userMoved.current) flyTo(live.current.camera.target);
+    }, 120);
+    return () => window.clearTimeout(id);
+  }, [insetsKey, flyTo]);
+
+  useImperativeHandle(
+    apiRef,
+    () => ({
+      zoomBy: (factor: number) => {
+        const svgEl = svgRef.current;
+        const zoom = zoomRef.current;
+        const s = sizeRef.current;
+        if (!svgEl || !zoom || !s) return;
+        const ins = live.current.insets;
+        const c: [number, number] = [ins.left + (s.w - ins.left - ins.right) / 2, ins.top + (s.h - ins.top - ins.bottom) / 2];
+        const sel = d3.select(svgEl);
+        if (prefersReducedMotion()) sel.call(zoom.scaleBy, factor, c);
+        else sel.transition().duration(320).ease(d3.easeCubicOut).call(zoom.scaleBy, factor, c);
+        scheduleSemantic(380);
+      },
+      recenter: () => flyTo(live.current.camera.target),
+    }),
+    [flyTo, scheduleSemantic],
+  );
+
+  /* ------------------------------------------------- camada de municípios */
+  useEffect(() => {
+    const host = munsRef.current;
+    if (!host || !states) return;
+    const old = munLayer.current;
+    if (old && old.uf !== focusUf) {
+      munLayer.current = null;
+      setMunLayerUf(null);
+      d3.select(munLabelsRef.current).selectAll('*').remove();
+      gsap.to(old.g, { opacity: 0, duration: 0.2, onComplete: () => old.g.remove() });
+    }
+    if (!focusUf || munLayer.current?.uf === focusUf) return;
     let alive = true;
-    loadGeo(`/geo/mun/${ufSlug}.json`)
-      .then((fc) => alive && setMun({ uf: ufSlug, fc }))
+    loadGeo(`/geo/mun/${focusUf}.json`)
+      .then((fc) => {
+        const p = proj.current;
+        if (!alive || !p || live.current.focusUf !== focusUf) return;
+        const feats = fc.features as GeoF[];
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('data-uf-layer', focusUf);
+        host.appendChild(g);
+        const sel = d3
+          .select(g)
+          .selectAll<SVGPathElement, GeoF>('path')
+          .data(feats, (d) => String(d.properties.id))
+          .join('path')
+          .attr('class', 'map-region')
+          .attr('d', (d) => p.path(d) ?? '')
+          .attr('data-kind', 'mun')
+          .attr('data-id', (d) => String(d.properties.id))
+          .attr('data-name', (d) => d.properties.name ?? '')
+          .attr('tabindex', 0)
+          .attr('role', 'button')
+          .attr('stroke-width', 0.5)
+          .style('fill', 'var(--map-loading)');
+        munLayer.current = { uf: focusUf, features: feats, g };
+        setMunLayerUf(focusUf);
+
+        // rótulos dos maiores municípios (aparecem com o zoom)
+        const ranked = feats
+          .map((f) => ({ f, area: p.path.area(f), c: p.path.centroid(f) }))
+          .sort((a, b) => b.area - a.area)
+          .slice(0, 36);
+        d3.select(munLabelsRef.current)
+          .selectAll<SVGTextElement, (typeof ranked)[number]>('text')
+          .data(ranked, (d) => String(d.f.properties.id))
+          .join('text')
+          .attr('class', 'map-label')
+          .attr('transform', (d) => `translate(${d.c[0]},${d.c[1]})`)
+          .style('opacity', 0)
+          .text((d) => titleCase(d.f.properties.name ?? ''));
+        updateLabels();
+
+        // entrada em onda curta a partir do centro do estado
+        if (!prefersReducedMotion()) {
+          const sf = stateFeatures.current.get(focusUf);
+          const [ox, oy] = sf ? p.path.centroid(sf) : [0, 0];
+          const nodes = sel.nodes();
+          const dists = feats.map((f) => {
+            const [x, y] = p.path.centroid(f);
+            return Math.hypot(x - ox, y - oy);
+          });
+          const maxD = Math.max(...dists, 1);
+          gsap.fromTo(
+            nodes,
+            { opacity: 0 },
+            {
+              opacity: 1,
+              duration: 0.4,
+              ease: 'power1.out',
+              delay: (i: number) => 0.25 + (dists[i] / maxD) * 0.45,
+              clearProps: 'opacity',
+            },
+          );
+        }
+
+        const pc = pendingCamera.current;
+        if (pc && pc.target.kind === 'mun' && pc.target.uf === focusUf) {
+          if (flyTo(pc.target)) pendingCamera.current = null;
+        }
+      })
       .catch(() => undefined);
     return () => {
       alive = false;
     };
-  }, [ufSlug]);
+  }, [focusUf, states, flyTo, updateLabels]);
 
-  const projection = useMemo<GeoProjection | null>(() => {
-    if (!states || !size) return null;
-    return geoMercator().fitExtent(
-      [
-        [PAD, PAD + insetTop],
-        [Math.max(PAD + 10, size.w - PAD), Math.max(PAD + insetTop + 10, size.h - PAD)],
-      ],
-      states,
-    );
-    // insetTop só muda com o layout (mobile/desktop), junto com size
+  /* ----------------------------------------- cores: só atualiza o fill */
+  useEffect(() => {
+    d3.select(statesRef.current)
+      .selectAll<SVGPathElement, GeoF>('path')
+      .each(function (d) {
+        const uf = d.properties.sigla.toLowerCase();
+        const v = stateViews[uf];
+        const disabled = disabledStates?.has(uf);
+        const el = d3.select(this);
+        el.style('fill', v?.fill ?? 'var(--map-loading)')
+          .attr('data-state', v?.status ?? 'loading')
+          .attr('data-disabled', disabled ? '' : null)
+          .attr('data-active', uf === focusUf ? 'true' : null)
+          .attr('tabindex', disabled ? -1 : 0)
+          .attr('aria-label', regionLabel(d.properties.name ?? uf.toUpperCase(), v, disabled));
+      });
+  }, [stateViews, disabledStates, focusUf, states]);
+
+  useEffect(() => {
+    const layer = munLayer.current;
+    if (!layer) return;
+    d3.select(layer.g)
+      .selectAll<SVGPathElement, GeoF>('path')
+      .each(function (d) {
+        const id = String(d.properties.id);
+        const v = munViews[id];
+        d3.select(this)
+          .style('fill', v?.fill ?? 'var(--map-loading)')
+          .attr('data-state', v?.status ?? 'loading')
+          .attr('aria-label', regionLabel(titleCase(d.properties.name ?? ''), v));
+      });
+  }, [munViews, munLayerUf]);
+
+  /* ---------------------------- estado em foco: o resto recua, ele levanta */
+  useEffect(() => {
+    d3.select(statesRef.current).attr('data-focus', focusUf ? 'true' : 'false');
+    updateLabels();
+    computeLevel();
+    const lift = liftRef.current;
+    const p = proj.current;
+    if (!lift || !p) return;
+    const f = focusUf ? stateFeatures.current.get(focusUf) : undefined;
+    const sel = d3
+      .select(lift)
+      .selectAll<SVGPathElement, GeoF>('path')
+      .data(f ? [f] : [], (d) => d.properties.sigla);
+    sel.exit().each(function () {
+      gsap.to(this as Element, { opacity: 0, duration: 0.25, onComplete: () => (this as Element).remove() });
+    });
+    const entered = sel
+      .enter()
+      .append('path')
+      .attr('class', 'map-lift')
+      .attr('d', (d) => p.path(d) ?? '');
+    entered.each(function (d) {
+      if (prefersReducedMotion()) return;
+      const [cx, cy] = p.path.centroid(d);
+      gsap.fromTo(
+        this,
+        { scale: 1, opacity: 0, svgOrigin: `${cx} ${cy}` },
+        {
+          keyframes: [
+            { scale: 1.035, opacity: 1, duration: 0.35, ease: 'power2.out' },
+            { scale: 1, duration: 0.6, ease: 'power3.inOut' },
+          ],
+          svgOrigin: `${cx} ${cy}`,
+        },
+      );
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [states, size]);
+  }, [focusUf, states]);
 
-  const path = useMemo<GeoPath | null>(() => (projection ? geoPath(projection) : null), [projection]);
+  /* cor do brilho acompanha o líder do estado em foco */
+  useEffect(() => {
+    const v = focusUf ? stateViews[focusUf] : undefined;
+    const color = v?.status === 'leader' && v.color ? candFill(v.color) : 'var(--line-loud)';
+    d3.select(liftRef.current)
+      .selectAll('path')
+      .style('fill', v?.fill ?? 'var(--map-loading)')
+      .style('stroke', color)
+      .style('stroke-width', '1.5px')
+      .style('filter', `drop-shadow(0 0 calc(16px / var(--k, 1)) color-mix(in oklab, ${color} 60%, transparent))`);
+  }, [focusUf, stateViews]);
 
-  const statePaths = useMemo(() => {
-    if (!states || !path) return [];
-    return states.features.map((f) => {
-      const p = f.properties ?? {};
-      const slug = (p.sigla ?? '').toLowerCase();
-      return { slug, name: p.name ?? p.sigla ?? slug, d: path(f) ?? '', feature: f };
-    });
-  }, [states, path]);
-
-  const munPaths = useMemo(() => {
-    if (!mun || !path || mun.uf !== ufSlug) return [];
-    return mun.fc.features.map((f) => {
-      const p = f.properties ?? {};
-      return { ibge: String(p.id ?? ''), name: p.name ?? '', d: path(f) ?? '' };
-    });
-  }, [mun, path, ufSlug]);
-
-  /* animação de entrada: estados surgem do centro em onda curta */
-  useLayoutEffect(() => {
-    const g = statesRef.current;
-    if (!g || statePaths.length === 0 || introDone.current) return;
-    introDone.current = true;
-    if (prefersReducedMotion()) return;
-    gsap.fromTo(
-      g.querySelectorAll('path'),
-      { opacity: 0, scale: 0.94, transformOrigin: '50% 50%' },
-      {
-        opacity: 1,
-        scale: 1,
-        duration: 0.9,
-        ease: 'power3.out',
-        stagger: { each: 0.022, from: 'center' },
-        clearProps: 'opacity,transform',
-      },
-    );
-  }, [statePaths]);
-
-  /* zoom suave para o estado (e de volta para o país) */
-  useLayoutEffect(() => {
-    const g = zoomRef.current;
-    if (!g || !path || !size) return;
-    let target = { x: 0, y: 0, k: 1 };
-    const feat = ufSlug ? statePaths.find((s) => s.slug === ufSlug)?.feature : undefined;
-    if (feat) {
-      const [[x0, y0], [x1, y1]] = path.bounds(feat as Feature);
-      const ax0 = PAD + 8;
-      const ay0 = PAD + insetTop;
-      const ax1 = size.w - insetRight - PAD - 8;
-      const ay1 = size.h - PAD - 8;
-      const k = Math.min(16, 0.92 * Math.min((ax1 - ax0) / (x1 - x0 || 1), (ay1 - ay0) / (y1 - y0 || 1)));
-      target = {
-        k,
-        x: (ax0 + ax1) / 2 - k * ((x0 + x1) / 2),
-        y: (ay0 + ay1) / 2 - k * ((y0 + y1) / 2),
-      };
+  /* ------------------------------------------- contornos: hover e destaque */
+  useEffect(() => {
+    const ov = overlayRef.current;
+    const p = proj.current;
+    if (!ov || !p) return;
+    const shapes: Array<{ key: string; d: string; kind: 'hover' | 'pick'; color: string }> = [];
+    const layer = munLayer.current;
+    const findMun = (id: string) => layer?.features.find((f) => String(f.properties.id) === id);
+    if (highlightIbge) {
+      const f = findMun(highlightIbge);
+      const v = munViews[highlightIbge];
+      if (f) shapes.push({ key: `pick-${highlightIbge}`, d: p.path(f) ?? '', kind: 'pick', color: v?.color ? candFill(v.color) : 'var(--text)' });
     }
-    const apply = () => {
-      const v = view.current;
-      g.setAttribute('transform', `translate(${v.x},${v.y}) scale(${v.k})`);
-    };
-    gsap.to(view.current, {
-      ...target,
-      duration: dur(DUR.zoom),
-      ease: 'power3.inOut',
-      overwrite: true,
-      onUpdate: apply,
-      onComplete: apply,
-    });
-  }, [ufSlug, path, size, statePaths, insetRight, insetTop]);
+    if (hover && !touch) {
+      const f = hover.kind === 'state' ? stateFeatures.current.get(hover.id) : findMun(hover.id);
+      if (f && !(hover.kind === 'mun' && hover.id === highlightIbge))
+        shapes.push({ key: `hover-${hover.kind}-${hover.id}`, d: p.path(f) ?? '', kind: 'hover', color: 'var(--text)' });
+    }
+    const sel = d3
+      .select(ov)
+      .selectAll<SVGPathElement, (typeof shapes)[number]>('path')
+      .data(shapes, (d) => d.key);
+    sel.exit().remove();
+    const entered = sel
+      .enter()
+      .append('path')
+      .attr('class', 'map-lift')
+      .attr('fill', 'none')
+      .attr('d', (d) => d.d);
+    entered
+      .filter((d) => d.kind === 'pick')
+      .each(function () {
+        if (prefersReducedMotion()) return;
+        gsap.fromTo(this, { opacity: 0 }, { opacity: 1, duration: 0.35, ease: 'power2.out' });
+      });
+    entered
+      .merge(sel)
+      .style('stroke', (d) => (d.kind === 'pick' ? 'var(--text)' : 'rgb(255 255 255 / 0.85)'))
+      .style('stroke-width', (d) => (d.kind === 'pick' ? '2px' : '1.25px'))
+      .style('filter', (d) =>
+        d.kind === 'pick' ? `drop-shadow(0 0 calc(9px / var(--k, 1)) color-mix(in oklab, ${d.color} 85%, transparent))` : null,
+      );
+  }, [hover, highlightIbge, munViews, munLayerUf, touch]);
 
-  /* camada de municípios aparece quando o zoom está quase no fim */
-  useLayoutEffect(() => {
-    const g = munRef.current;
-    if (!g || munPaths.length === 0) return;
-    gsap.fromTo(g, { opacity: 0 }, { opacity: 1, duration: dur(0.5), delay: dur(0.35), ease: 'power1.out' });
-  }, [munPaths]);
-
-  const stateFills = useMemo(() => {
-    const out: Record<string, string> = {};
-    for (const s of statePaths) out[s.slug] = regionFill(stateLeaders[s.slug], 18);
-    return out;
-  }, [statePaths, stateLeaders]);
-
-  /* ---- interação ---- */
-  const hoverKey = useRef<string>('');
-
-  const onMove = (e: PointerEvent<SVGSVGElement>) => {
-    if (e.pointerType !== 'mouse') return;
-    const t = (e.target as Element).closest<SVGPathElement>('[data-kind]');
-    const wrap = wrapRef.current;
+  /* ------------------------------------------------------------- interação */
+  const hoverKey = useRef('');
+  const placeTip = (x: number, y: number) => {
     const tip = tipRef.current;
-    if (!t || !wrap) {
-      if (hoverKey.current) {
-        hoverKey.current = '';
-        setHover(null);
-      }
-      return;
-    }
-    const rect = wrap.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    if (tip) {
-      const tw = tip.offsetWidth || 220;
-      const th = tip.offsetHeight || 80;
-      const left = x + 16 + tw > rect.width - insetRight ? x - 16 - tw : x + 16;
-      const top = Math.min(Math.max(8, y - th - 12), rect.height - th - 8);
-      tip.style.transform = `translate3d(${left}px, ${top}px, 0)`;
-    }
-    const key = `${t.dataset.kind}:${t.dataset.id}`;
+    const wrap = wrapRef.current;
+    if (!tip || !wrap) return;
+    const w = wrap.clientWidth;
+    const h = wrap.clientHeight;
+    const tw = tip.offsetWidth || 224;
+    const th = tip.offsetHeight || 80;
+    const left = x + 18 + tw > w - 8 ? x - 18 - tw : x + 18;
+    const top = Math.min(Math.max(8, y - th - 14), h - th - 8);
+    tip.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+  };
+
+  const setHoverTarget = (el: Element | null) => {
+    const kind = el?.getAttribute('data-kind') as 'state' | 'mun' | null;
+    const id = el?.getAttribute('data-id') ?? '';
+    const key = kind ? `${kind}:${id}` : '';
     if (key === hoverKey.current) return;
     hoverKey.current = key;
-    setHover(buildHover(t.dataset.kind!, t.dataset.id!, t.dataset.name ?? ''));
+    setHover(kind ? { kind, id } : null);
+    props.onHoverMun(kind === 'mun' ? id : null);
   };
 
-  const buildHover = (kind: string, id: string, name: string): HoverInfo => {
-    if (kind === 'state') {
-      const lead = stateLeaders[id];
-      return {
-        kind: 'state',
-        id,
-        title: lead?.name ?? name,
-        tag: id.toUpperCase(),
-        note: disabledStates?.has(id) ? 'Sem 2º turno para este cargo' : undefined,
-        loading: !lead || lead.loading,
-        leader: lead?.hasLeader
-          ? { name: lead.leaderName ?? '', color: lead.leaderColor, pct: lead.leaderPct, margin: lead.margin }
-          : undefined,
-      };
-    }
-    const lead = munLeaders?.[id];
-    const cand = lead?.leaderId ? candidateNames[lead.leaderId] : undefined;
-    return {
-      kind: 'mun',
-      id,
-      title: titleCase(lead?.name ?? name),
-      tag: ufSlug?.toUpperCase() ?? '',
-      loading: !lead || lead.loading,
-      leader: lead?.hasLeader
-        ? { name: cand?.name ?? '', color: lead.leaderColor, pct: lead.leaderPct, margin: lead.margin }
-        : undefined,
-    };
+  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.pointerType !== 'mouse' || e.buttons) return;
+    if (tipRef.current) tipRef.current.style.opacity = '';
+    const wrap = wrapRef.current!.getBoundingClientRect();
+    placeTip(e.clientX - wrap.left, e.clientY - wrap.top);
+    setHoverTarget((e.target as Element).closest('[data-kind]'));
   };
 
-  /* mantém o tooltip atualizado enquanto os dados chegam */
-  const liveHover = hover ? buildHover(hover.kind, hover.id, hover.title) : null;
-
-  const activate = (el: SVGPathElement | null) => {
+  const activate = (el: Element | null) => {
     if (!el) return;
-    const { kind, id } = el.dataset;
-    hoverKey.current = '';
-    setHover(null);
-    if (kind === 'state' && id) {
-      if (disabledStates?.has(id)) return;
-      if (id !== ufSlug) onSelectState(id);
-    } else if (kind === 'mun' && id) {
-      const lead = munLeaders?.[id];
-      if (lead) onSelectMunicipality(lead.tseCode, lead.name);
-    }
+    const kind = el.getAttribute('data-kind') as 'state' | 'mun' | null;
+    const id = el.getAttribute('data-id');
+    if (!kind || !id) return;
+    if (kind === 'state' && disabledStates?.has(id)) return;
+    if (touch) setTap({ kind, id });
+    else if (tipRef.current) tipRef.current.style.opacity = '0';
+    props.onActivate(kind, id);
   };
 
-  const hovered =
-    hover?.kind === 'state'
-      ? statePaths.find((s) => s.slug === hover.id)?.d
-      : hover?.kind === 'mun'
-        ? munPaths.find((m) => m.ibge === hover.id)?.d
-        : undefined;
-  const selectedState = ufSlug ? statePaths.find((s) => s.slug === ufSlug)?.d : undefined;
-  const selectedMun = selectedIbge ? munPaths.find((m) => m.ibge === selectedIbge)?.d : undefined;
+  const onFocusIn = (e: React.FocusEvent<SVGSVGElement>) => {
+    const el = (e.target as Element).closest('[data-kind]');
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const wrap = wrapRef.current!.getBoundingClientRect();
+    placeTip(r.left + r.width / 2 - wrap.left, r.top + r.height / 2 - wrap.top);
+    setHoverTarget(el);
+  };
+
+  /* conteúdo do tooltip (hover no desktop, toque no mobile) */
+  const info = buildInfo(touch ? tap : hover, stateViews, munViews, munLayer.current, stateFeatures.current, disabledStates);
 
   return (
-    <div ref={wrapRef} className="absolute inset-0">
-      {size && statePaths.length > 0 && (
-        <svg
-          width={size.w}
-          height={size.h}
-          className="map-canvas block"
-          onPointerMove={onMove}
-          onPointerLeave={() => {
-            hoverKey.current = '';
-            setHover(null);
-          }}
-          onClick={(e) => activate((e.target as Element).closest<SVGPathElement>('[data-kind]'))}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              const el = (e.target as Element).closest<SVGPathElement>('[data-kind]');
-              if (el) {
-                e.preventDefault();
-                activate(el);
-              }
+    <div ref={wrapRef} className="canvas absolute inset-0 overflow-hidden">
+      <svg
+        ref={svgRef}
+        width={size?.w ?? 0}
+        height={size?.h ?? 0}
+        className="block select-none"
+        role="group"
+        aria-label={focusUf ? `Mapa dos municípios de ${focusUf.toUpperCase()}` : 'Mapa do Brasil por estado'}
+        onPointerMove={onPointerMove}
+        onPointerLeave={() => setHoverTarget(null)}
+        onClick={(e) => activate((e.target as Element).closest('[data-kind]'))}
+        onFocus={onFocusIn}
+        onBlur={() => setHoverTarget(null)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            const el = (e.target as Element).closest('[data-kind]');
+            if (el) {
+              e.preventDefault();
+              activate(el);
             }
-          }}
-          role="group"
-          aria-label={ufSlug ? `Mapa dos municípios de ${ufSlug.toUpperCase()}` : 'Mapa do Brasil por estado'}
-        >
-          <g ref={zoomRef}>
-            <g ref={statesRef} className="map-states" data-focus={ufSlug ? 'true' : 'false'}>
-              {statePaths.map((s) => (
-                <RegionPath
-                  key={s.slug}
-                  kind="state"
-                  id={s.slug}
-                  name={s.name}
-                  d={s.d}
-                  fill={stateFills[s.slug]}
-                  loading={stateLeaders[s.slug]?.loading ?? true}
-                  active={s.slug === ufSlug}
-                  disabled={disabledStates?.has(s.slug)}
-                  strokeWidth={1}
-                  focusable={!disabledStates?.has(s.slug)}
-                />
-              ))}
-            </g>
-            {munPaths.length > 0 && (
-              <g ref={munRef} key={ufSlug}>
-                {munPaths.map((m) => {
-                  const lead = munLeaders?.[m.ibge];
-                  return (
-                    <RegionPath
-                      key={m.ibge}
-                      kind="mun"
-                      id={m.ibge}
-                      name={m.name}
-                      d={m.d}
-                      fill={regionFill(lead, 14)}
-                      loading={lead?.loading ?? true}
-                      active={m.ibge === selectedIbge}
-                      strokeWidth={0.5}
-                    />
-                  );
-                })}
-              </g>
-            )}
-            <g pointerEvents="none" fill="none" vectorEffect="non-scaling-stroke">
-              {selectedState && (
-                <path d={selectedState} stroke="var(--text)" strokeOpacity={0.55} strokeWidth={1.25} vectorEffect="non-scaling-stroke" />
-              )}
-              {hovered && (
-                <path d={hovered} stroke="var(--text)" strokeWidth={1.25} vectorEffect="non-scaling-stroke" />
-              )}
-              {selectedMun && (
-                <path d={selectedMun} stroke="var(--text)" strokeWidth={2.25} vectorEffect="non-scaling-stroke" />
-              )}
-            </g>
-          </g>
-        </svg>
-      )}
+          }
+        }}
+      >
+        <defs>
+          <pattern id="map-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="6" height="6" fill="var(--map-error)" />
+            <line x1="0" y1="0" x2="0" y2="6" stroke="rgb(255 255 255 / 0.12)" strokeWidth="1.5" />
+          </pattern>
+        </defs>
+        <g ref={rootRef}>
+          <g ref={statesRef} className="map-states" />
+          <g ref={liftRef} />
+          <g ref={munsRef} />
+          <g ref={overlayRef} pointerEvents="none" />
+          <g ref={stateLabelsRef} pointerEvents="none" />
+          <g ref={munLabelsRef} pointerEvents="none" />
+        </g>
+      </svg>
 
-      {statePaths.length === 0 && (
-        <div className="absolute inset-0 grid place-items-center">
+      {!states && (
+        <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <div className="flex flex-col items-center gap-3">
-            <Skeleton className="size-40 rounded-[40%] sm:size-64" />
-            <p className="eyebrow">{geoError ? 'Não foi possível carregar o mapa' : 'Desenhando o mapa'}</p>
+            <div className="skeleton size-48 rounded-[38%] sm:size-72" />
+            <p className="eyebrow">{geoError ? 'Não deu para carregar o mapa. Recarregue a página.' : 'Desenhando o mapa'}</p>
           </div>
         </div>
       )}
 
-      <MapTooltip ref={tipRef} info={liveHover} awaiting={awaiting} />
+      {touch ? (
+        tap && info && (
+          <MapTooltip info={info} awaiting={awaiting} onClose={() => setTap(null)} docked style={{ top: props.insets.top + 4 }} />
+        )
+      ) : (
+        <MapTooltip ref={tipRef} info={info} awaiting={awaiting} />
+      )}
     </div>
   );
 }
 
-const RegionPath = memo(function RegionPath({
-  kind,
-  id,
-  name,
-  d,
-  fill,
-  loading,
-  active,
-  strokeWidth,
-  focusable,
-  disabled,
-}: {
-  kind: 'state' | 'mun';
-  id: string;
-  name: string;
-  d: string;
-  fill: string;
-  loading: boolean;
-  active: boolean;
-  strokeWidth: number;
-  focusable?: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <path
-      className={clsx('map-region')}
-      data-kind={kind}
-      data-id={id}
-      data-uf={kind === 'state' ? id : undefined}
-      data-name={name}
-      data-active={active}
-      data-loading={loading && !disabled}
-      data-disabled={disabled || undefined}
-      d={d}
-      style={{ fill }}
-      strokeWidth={strokeWidth}
-      vectorEffect="non-scaling-stroke"
-      tabIndex={focusable ? 0 : undefined}
-      role={focusable ? 'button' : undefined}
-      aria-label={focusable ? name : undefined}
-    />
-  );
-});
+/* -------------------------------------------------------------------------- */
+
+function regionLabel(name: string, v: RegionView | undefined, disabled?: boolean) {
+  if (disabled) return `${name}: sem 2º turno para este cargo`;
+  if (!v || v.status === 'loading') return `${name}: carregando`;
+  if (v.status === 'leader')
+    return `${name}: ${v.leaderName ? titleCase(v.leaderName) : 'líder'} à frente com ${v.pct.toFixed(1).replace('.', ',')}%`;
+  return `${name}: ${v.note ?? 'sem dados'}`;
+}
+
+function buildInfo(
+  target: { kind: 'state' | 'mun'; id: string } | null,
+  stateViews: Record<string, RegionView>,
+  munViews: Record<string, RegionView>,
+  layer: MunLayer | null,
+  stateFeatures: Map<string, GeoF>,
+  disabled?: Set<string>,
+): HoverInfo | null {
+  if (!target) return null;
+  if (target.kind === 'state') {
+    const f = stateFeatures.get(target.id);
+    return {
+      kind: 'state',
+      id: target.id,
+      title: f?.properties.name ?? target.id.toUpperCase(),
+      tag: target.id.toUpperCase(),
+      view: stateViews[target.id],
+      note: disabled?.has(target.id) ? 'Sem 2º turno para este cargo' : undefined,
+    };
+  }
+  const f = layer?.features.find((x) => String(x.properties.id) === target.id);
+  return {
+    kind: 'mun',
+    id: target.id,
+    title: titleCase(f?.properties.name ?? ''),
+    tag: layer?.uf.toUpperCase() ?? '',
+    view: munViews[target.id],
+  };
+}

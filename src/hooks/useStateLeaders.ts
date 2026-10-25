@@ -4,6 +4,10 @@ import { parseResult, resolveMapLeader } from '../lib/tse/parse';
 import { UF_LIST } from '../lib/tse/config';
 import type { OfficeId, Round } from '../lib/tse/types';
 
+/** Cor neutra do mapa quando não há líder (sem votos ou empate). */
+export const NEUTRAL_COLOR = '#52525b';
+export const MAP_NOTE = { 'sem-votos': 'Sem votos apurados', empate: 'Empate' } as const;
+
 export interface StateLeader {
   slug: string;
   sigla: string;
@@ -12,7 +16,8 @@ export interface StateLeader {
   leaderPct: number;
   margin: number;
   leaderName?: string;
-  hasLeader: boolean;
+  /** Texto do tooltip quando não há líder (sem votos ou empate). */
+  note?: string;
   loading: boolean;
 }
 
@@ -32,7 +37,6 @@ export function useStateLeaders(round: Round, officeId: OfficeId, enabled: boole
         leaderColor: '#3f3f46',
         leaderPct: 0,
         margin: 0,
-        hasLeader: false,
         loading: true,
       };
     }
@@ -43,18 +47,18 @@ export function useStateLeaders(round: Round, officeId: OfficeId, enabled: boole
         try {
           const raw = await fetchResult(round, officeId, 'uf', uf.slug);
           const parsed = parseResult(raw, { round, officeId, scopeLabel: uf.name });
-          const resolved = resolveMapLeader(parsed.candidates);
+          const { leader: lead, margin, reason } = resolveMapLeader(parsed.candidates);
           setMap((prev) => ({
             ...prev,
             [uf.slug]: {
               slug: uf.slug,
               sigla: uf.sigla,
               name: uf.name,
-              leaderColor: resolved.leader?.color ?? '#3f3f46',
-              leaderPct: resolved.leader?.percent ?? 0,
-              margin: resolved.margin,
-              leaderName: resolved.leader?.shortName,
-              hasLeader: resolved.hasLeader,
+              leaderColor: lead?.color ?? NEUTRAL_COLOR,
+              leaderPct: lead?.percent ?? 0,
+              margin,
+              leaderName: lead?.shortName,
+              note: reason ? MAP_NOTE[reason] : undefined,
               loading: false,
             },
           }));

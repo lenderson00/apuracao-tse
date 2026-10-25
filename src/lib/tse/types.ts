@@ -35,15 +35,14 @@ export interface TurnoutStats {
   sectionsPct: number;
   electorate: number;
   abstentions: number;
-  abstentionPct: number | null;
+  abstentionPct: number;
   turnout: number;
-  turnoutPct: number | null;
+  turnoutPct: number;
   blank: number;
-  blankPct: number | null;
+  blankPct: number;
   nullVotes: number;
-  nullPct: number | null;
+  nullPct: number;
   validVotes: number;
-  apurationStarted: boolean;
 }
 
 export interface ParsedResult {
@@ -99,8 +98,11 @@ export interface TseResultFile {
     vv: string;
     vb: string;
     pvb: string;
+    pvbn?: string;
     vn: string;
     pvn: string;
+    /** Total de nulos (nulos + nulos técnicos) e % sobre o total de votos. */
+    tvn?: string;
     ptvn?: string;
     ptvnn?: string;
   };

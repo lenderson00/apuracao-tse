@@ -5,6 +5,18 @@ import type { OfficeId, ParsedResult, Round } from '../lib/tse/types';
 
 const REFRESH_MS = 60_000;
 
+interface KeyedState {
+  key: string;
+  data: ParsedResult | null;
+  error: string | null;
+  loading: boolean;
+}
+
+/**
+ * Resultado de um recorte (turno, cargo, abrangência, código).
+ * O estado fica atrelado à chave do recorte: ao trocar de recorte, os números
+ * antigos somem na hora, e respostas atrasadas de outro recorte são descartadas.
+ */
 export function useElectionResult(
   round: Round,
   officeId: OfficeId,
@@ -13,36 +25,58 @@ export function useElectionResult(
   scopeLabel: string,
   enabled = true,
 ) {
-  const [data, setData] = useState<ParsedResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const key = `${round}|${officeId}|${scope}|${code}|${enabled ? 1 : 0}`;
+  const [state, setState] = useState<KeyedState>({ key, data: null, error: null, loading: true });
+  const currentKey = useRef(key);
+  useEffect(() => {
+    currentKey.current = key;
+  }, [key]);
 
   const load = useCallback(async () => {
     if (!enabled || !code) return;
+    const requestKey = key;
     try {
       const raw = await fetchResult(round, officeId, scope, code);
-      setData(parseResult(raw, { round, officeId, scopeLabel }));
-      setError(null);
+      if (currentKey.current !== requestKey) return;
+      setState({
+        key: requestKey,
+        data: parseResult(raw, { round, officeId, scopeLabel }),
+        error: null,
+        loading: false,
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Falha ao carregar dados do TSE');
-    } finally {
-      setLoading(false);
+      if (currentKey.current !== requestKey) return;
+      console.error('[tse]', e);
+      setState((prev) => {
+        const sameKey = prev.key === requestKey;
+        const data = sameKey ? prev.data : null;
+        return {
+          key: requestKey,
+          data,
+          error: data
+            ? 'Não conseguimos atualizar com o TSE agora. Os números abaixo são da última atualização. Vamos tentar de novo em 1 minuto.'
+            : 'Não foi possível carregar os dados do TSE para este recorte. Vamos tentar de novo em 1 minuto.',
+          loading: false,
+        };
+      });
     }
-  }, [round, officeId, scope, code, scopeLabel, enabled]);
+  }, [key, round, officeId, scope, code, scopeLabel, enabled]);
 
   useEffect(() => {
-    setLoading(true);
     void load();
   }, [load]);
 
   useEffect(() => {
     if (!enabled) return;
-    timer.current = setInterval(() => void load(), REFRESH_MS);
-    return () => {
-      if (timer.current) clearInterval(timer.current);
-    };
+    const timer = setInterval(() => void load(), REFRESH_MS);
+    return () => clearInterval(timer);
   }, [load, enabled]);
 
-  return { data, error, loading, refresh: load };
+  const fresh = state.key === key;
+  return {
+    data: enabled && fresh ? state.data : null,
+    error: enabled && fresh ? state.error : null,
+    loading: enabled && (!fresh || state.loading),
+    refresh: load,
+  };
 }

@@ -1,23 +1,21 @@
 /**
- * Cores de candidato vêm do TSE/config como hex de marca. Aqui viram tons
- * ajustados ao tema: preenchimento (mapa, barras) e texto com contraste AA.
+ * Cores de candidato vêm do config como hex de marca. Aqui viram tons
+ * ajustados ao fundo escuro: preenchimento (mapa, barras) e texto AA.
  */
 
-/** Cor de dado: no escuro ganha um pouco de luz para não afundar no fundo. */
+/** Cor de dado: ganha um pouco de luz para não afundar no fundo escuro. */
 export function candFill(color: string): string {
   return `color-mix(in oklab, ${color}, white var(--cand-lift))`;
 }
 
-/** Cor para texto: puxa para a cor da tinta do tema até passar AA. */
+/** Cor para texto: puxa para a tinta clara até passar AA sobre as superfícies. */
 export function candText(color: string): string {
-  return `color-mix(in oklab, ${color} 68%, var(--text))`;
+  return `color-mix(in oklab, ${color} 62%, var(--text))`;
 }
 
-/** Preenchimento do mapa: força proporcional à margem (0–1), base neutra. */
+/** Preenchimento do mapa: força proporcional à margem (0–1), sobre base escura. */
 export function mapFill(color: string, strength: number): string {
-  const s = Math.max(0, Math.min(1, strength));
-  const pct = Math.round(42 + s * 58);
-  return `color-mix(in oklab, ${candFill(color)} ${pct}%, var(--map-neutral))`;
+  const s = Number.isFinite(strength) ? Math.max(0, Math.min(1, strength)) : 0;
+  const pct = Math.round(48 + s * 52);
+  return `color-mix(in oklab, ${candFill(color)} ${pct}%, #17171b)`;
 }
-
-export const MAP_NEUTRAL = 'var(--map-neutral)';

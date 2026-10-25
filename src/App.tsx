@@ -1,234 +1,330 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BrazilMap } from './components/BrazilMap';
-import { DetailBody, DetailHeader } from './components/DetailPanel';
-import { Hero } from './components/Hero';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { BrazilMap, type Camera, type CameraTarget, type Insets, type MapApi, type MapLevel } from './components/BrazilMap';
+import {
+  AboutContent,
+  Brand,
+  Breadcrumb,
+  Popover,
+  Rail,
+  ShortcutsContent,
+  TSE_URL,
+  ZoomControls,
+  type Crumb,
+} from './components/Chrome';
+import { Dock } from './components/Dock';
+import { hasStarted } from './lib/ui/turnout';
 import { MapLegend, type LegendItem } from './components/MapLegend';
-import { TextScramble } from './components/TextScramble';
-import { TopBar } from './components/TopBar';
-import { TopProgress } from './components/TopProgress';
-import { Button } from './components/ui/Button';
+import { MunicipalitySearch } from './components/MunicipalitySearch';
 import { Icon } from './components/ui/Icon';
-import { Panel } from './components/ui/Panel';
 import { Tabs } from './components/ui/Tabs';
 import { useElectionResult } from './hooks/useElectionResult';
 import { municipalitiesForUf, useMunicipalityIndex } from './hooks/useMunicipalityIndex';
-import { useMunicipalityResults } from './hooks/useMunicipalityResults';
-import { useStateLeaders } from './hooks/useStateLeaders';
+import { useMunicipalityResults, type MunLeader } from './hooks/useMunicipalityResults';
+import { useStateLeaders, type StateLeader } from './hooks/useStateLeaders';
 import { GOV_RUNOFF_UFS, OFFICES, ROUND_OPTIONS, UF_LIST } from './lib/tse/config';
-import { buildResultPath } from './lib/tse/client';
 import type { MunicipalityRef, OfficeId, ParsedResult, Round } from './lib/tse/types';
-import { titleCase } from './lib/ui/format';
-import { prefersReducedMotion } from './lib/ui/motion';
+import { candFill } from './lib/ui/color';
+import { fmtPct, titleCase } from './lib/ui/format';
+import { munView, stateView, type RegionView } from './lib/ui/regions';
 import { useMediaQuery } from './lib/ui/useMediaQuery';
 
-type Scope = 'br' | 'uf' | 'mu';
+const isRunoffUf = (uf: string) => (GOV_RUNOFF_UFS as ReadonlySet<string>).has(uf);
 
-interface MunSel {
-  tse: string;
-  ibge?: string;
-  name: string;
-  uf: string;
-}
+const STATE_POLL_MS = 60_000;
+const MUN_POLL_MS = 180_000;
 
-/** Descarta resultado de um recorte anterior enquanto o novo ainda carrega. */
-function fresh(data: ParsedResult | null, round: Round, officeId: OfficeId, scope: Scope, code: string) {
-  if (!data || !code) return null;
-  if (data.round !== round || data.officeId !== officeId || data.scope !== scope) return null;
-  return code.toLowerCase().endsWith(data.scopeCode.toLowerCase()) ? data : null;
-}
-
-const PANEL_INSET = 424;
+type Names = Record<string, { name: string; color: string }>;
 
 export default function App() {
+  const desktop = useMediaQuery('(min-width: 1024px)');
+  const touch = useMediaQuery('(pointer: coarse)');
+
   const [round, setRound] = useState<Round>(2);
   const [officeId, setOfficeId] = useState<OfficeId>('1');
-  const [ufSlug, setUfSlug] = useState<string | null>(null);
-  const [mun, setMun] = useState<MunSel | null>(null);
-  const desktop = useMediaQuery('(min-width: 1024px)');
-  const mapCardRef = useRef<HTMLDivElement>(null);
+  const [focusUf, setFocusUf] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<string | null>(null);
+  const [zoomMun, setZoomMun] = useState<string | null>(null);
+  const [hoverMun, setHoverMun] = useState<string | null>(null);
+  const [level, setLevel] = useState<MapLevel>('country');
+  const [camera, setCamera] = useState<Camera>({ target: { kind: 'country' }, seq: 0 });
+  const [legendOn, setLegendOn] = useState(true);
+  const [pop, setPop] = useState<'about' | 'keys' | null>(null);
+  const [searching, setSearching] = useState(false);
+  const mapApi = useRef<MapApi>(null);
 
   const office = OFFICES.find((o) => o.id === officeId)!;
-  const ufMeta = UF_LIST.find((u) => u.slug === ufSlug);
+  const ufMeta = UF_LIST.find((u) => u.slug === focusUf);
   const hasNational = officeId === '1';
   const runoffGov = officeId === '3' && round === 2;
-
-  /* ---- dados ---- */
-  const nationalQ = useElectionResult(round, officeId, 'br', 'br', 'Brasil', hasNational);
-  const stateQ = useElectionResult(round, officeId, 'uf', ufSlug ?? '', ufMeta?.name ?? '', !!ufSlug);
-  const munCode = mun && ufSlug ? `${ufSlug}${mun.tse}` : '';
-  const munQ = useElectionResult(round, officeId, 'mu', munCode, mun ? `${mun.name} — ${mun.uf}` : '', !!munCode);
-
-  const national = hasNational ? fresh(nationalQ.data, round, officeId, 'br', 'br') : null;
-  const stateData = fresh(stateQ.data, round, officeId, 'uf', ufSlug ?? '');
-  const munData = fresh(munQ.data, round, officeId, 'mu', munCode);
-
-  const { map: stateLeaders, loading: statesLoading } = useStateLeaders(round, officeId, true);
-  const { items: munIndex } = useMunicipalityIndex(round);
-  const munInUf = useMemo(() => (ufSlug ? municipalitiesForUf(munIndex, ufSlug) : []), [munIndex, ufSlug]);
-  const { leaders: munLeaders, progress: munProgress } = useMunicipalityResults(
-    round,
-    officeId,
-    ufSlug ?? '',
-    munInUf,
-    !!ufSlug,
-  );
-
-  /* ---- navegação ---- */
-  const scrollToMap = useCallback(() => {
-    if (desktop) return;
-    const el = mapCardRef.current;
-    if (!el) return;
-    const top = el.getBoundingClientRect().top + window.scrollY - 76;
-    window.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
-  }, [desktop]);
-
-  const goCountry = useCallback(() => {
-    setUfSlug(null);
-    setMun(null);
-  }, []);
-
-  const goState = useCallback(
-    (slug: string) => {
-      if (officeId === '3' && round === 2 && !GOV_RUNOFF_UFS.has(slug)) return;
-      setUfSlug(slug);
-      setMun(null);
-      scrollToMap();
-    },
-    [officeId, round, scrollToMap],
-  );
-
-  const goStateFromHero = useCallback(
-    (slug: string) => {
-      goState(slug);
-      const el = mapCardRef.current;
-      if (desktop && el) {
-        const top = el.getBoundingClientRect().top + window.scrollY - 88;
-        window.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
-      }
-    },
-    [goState, desktop],
-  );
-
-  const goMunicipality = useCallback(
-    (tseCode: string, name: string) => {
-      if (!ufSlug) return;
-      const ibge = Object.values(munLeaders).find((m) => m.tseCode === tseCode)?.ibgeCode;
-      setMun({ tse: tseCode, ibge, name: titleCase(name), uf: ufMeta?.sigla ?? ufSlug.toUpperCase() });
-    },
-    [ufSlug, ufMeta, munLeaders],
-  );
-
-  const onSearchPick = useCallback(
-    (m: MunicipalityRef) => {
-      const slug = m.uf.toLowerCase();
-      if (officeId === '3' && round === 2 && !GOV_RUNOFF_UFS.has(slug)) setOfficeId('1');
-      setUfSlug(slug);
-      setMun({ tse: m.tseCode, ibge: m.ibgeCode, name: titleCase(m.name), uf: m.uf });
-      const el = mapCardRef.current;
-      if (el) {
-        const top = el.getBoundingClientRect().top + window.scrollY - (desktop ? 88 : 76);
-        window.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
-      }
-    },
-    [officeId, round, desktop],
-  );
-
-  const changeRound = (r: Round) => {
-    setRound(r);
-    if (r === 2 && officeId !== '1' && officeId !== '3') setOfficeId('1');
-    const nextOffice = r === 2 && officeId !== '1' && officeId !== '3' ? '1' : officeId;
-    if (nextOffice === '3' && r === 2 && ufSlug && !GOV_RUNOFF_UFS.has(ufSlug)) goCountry();
-  };
-
-  const changeOffice = (id: OfficeId) => {
-    setOfficeId(id);
-    if (id === '3' && round === 2 && ufSlug && !GOV_RUNOFF_UFS.has(ufSlug)) goCountry();
-  };
-
-  const closePanel = useCallback(() => {
-    if (mun) setMun(null);
-    else goCountry();
-  }, [mun, goCountry]);
-
-  /* ---- derivados para o mapa ---- */
-  const candidateNames = useMemo(() => {
-    const out: Record<string, { name: string; color: string }> = {};
-    for (const c of [...(national?.candidates ?? []), ...(stateData?.candidates ?? [])]) {
-      out[c.sqcand] = { name: c.shortName, color: c.color };
-    }
-    return out;
-  }, [national, stateData]);
-
-  const legend = useMemo<{ items: LegendItem[]; unit: string }>(() => {
-    const counts = new Map<string, LegendItem>();
-    const base = (ufSlug ? stateData?.candidates : national?.candidates) ?? [];
-    for (const c of base.slice(0, 2)) {
-      counts.set(c.shortName, { key: c.sqcand, name: c.shortName, color: c.color, count: 0 });
-    }
-    if (ufSlug) {
-      for (const m of Object.values(munLeaders)) {
-        if (!m.hasLeader || !m.leaderId) continue;
-        const name = candidateNames[m.leaderId]?.name ?? m.leaderId;
-        const it = counts.get(name) ?? { key: m.leaderId, name, color: m.leaderColor, count: 0 };
-        it.count += 1;
-        counts.set(name, it);
-      }
-    } else {
-      for (const s of Object.values(stateLeaders)) {
-        if (!s.hasLeader || !s.leaderName) continue;
-        const it = counts.get(s.leaderName) ?? { key: s.slug, name: s.leaderName, color: s.leaderColor, count: 0 };
-        it.count += 1;
-        counts.set(s.leaderName, it);
-      }
-    }
-    const items = [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 4);
-    return { items, unit: ufSlug ? 'mun.' : items.some((i) => i.count === 1) ? 'UF' : 'UFs' };
-  }, [ufSlug, stateData, national, munLeaders, stateLeaders, candidateNames]);
-
-  const runoffDisabled = useMemo(
-    () => (runoffGov ? new Set(UF_LIST.map((u) => u.slug).filter((s) => !GOV_RUNOFF_UFS.has(s))) : undefined),
+  const disabledStates = useMemo<Set<string> | undefined>(
+    () => (runoffGov ? new Set(UF_LIST.map((u) => u.slug).filter((s) => !isRunoffUf(s))) : undefined),
     [runoffGov],
   );
 
-  const awaiting = (national ?? stateData)?.turnout.apurationStarted === false;
+  /* ----------------------------------------------------------- mapa: dados */
+  /* Cada fonte vive num componente com key por recorte: ao trocar turno, cargo
+     ou estado, a anterior desmonta e respostas atrasadas dela não pintam o mapa. */
+  const [statesSrc, setStatesSrc] = useState<StatesSrc>(EMPTY_STATES);
+  const [munSrc, setMunSrc] = useState<MunSrc>(EMPTY_MUNS);
+  const stateLeaders = statesSrc.key === `${round}|${officeId}` ? statesSrc.map : EMPTY_STATES.map;
+  const reloadStates = statesSrc.reload;
+  const { items: munIndex } = useMunicipalityIndex(round);
+  const munInUf = useMemo(() => (focusUf ? municipalitiesForUf(munIndex, focusUf) : []), [munIndex, focusUf]);
+  const munByIbge = useMemo(() => new Map(munInUf.map((m) => [m.ibgeCode, m])), [munInUf]);
+  const munSrcKey = `${round}|${officeId}|${focusUf}`;
+  const munOk = !!focusUf && munSrc.key === munSrcKey;
+  const munLeaders = munOk ? munSrc.leaders : EMPTY_MUNS.leaders;
+  const munProgress = munOk ? munSrc.progress : 0;
+  const reloadMuns = munSrc.reload;
 
-  const loadingAny =
-    (hasNational && nationalQ.loading && !national) ||
-    statesLoading ||
-    (!!ufSlug && munInUf.length > 0 && munProgress < 100);
+  /* polling das cores (sem recriar paths: o mapa só troca o fill) */
+  const reloadStatesRef = useRef(reloadStates);
+  const reloadMunsRef = useRef(reloadMuns);
+  useEffect(() => {
+    reloadStatesRef.current = reloadStates;
+    reloadMunsRef.current = reloadMuns;
+  }, [reloadStates, reloadMuns]);
+  useEffect(() => {
+    const id = window.setInterval(() => void reloadStatesRef.current(), STATE_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [round, officeId]);
+  useEffect(() => {
+    if (!focusUf) return;
+    const id = window.setInterval(() => void reloadMunsRef.current(), MUN_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [focusUf, round, officeId]);
 
-  /* ---- painel ---- */
-  const panelOpen = !!ufSlug;
-  const detailData = mun ? munData : stateData;
-  const detailQ = mun ? munQ : stateQ;
-  const photoUf = officeId === '1' ? 'br' : buildResultPath(round, officeId, mun ? 'mu' : 'uf', mun ? munCode : (ufSlug ?? 'br'))?.photoUf ?? 'br';
-  const contextLabel = `${office.label} · ${round}º turno`;
-  const panelHeader = (
-    <DetailHeader
-      context={contextLabel}
-      title={mun ? mun.name : (ufMeta?.name ?? '')}
-      data={detailData}
-      back={mun && ufMeta ? { label: ufMeta.name, onClick: () => setMun(null) } : undefined}
-    />
+  /* ------------------------------------------------- recorte mostrado no dock */
+  const activeMun = pinned ?? (focusUf && level === 'mun' ? (hoverMun ?? zoomMun) : null);
+  const munRef = activeMun ? munByIbge.get(activeMun) : undefined;
+  const scope: 'br' | 'uf' | 'mu' = munRef && focusUf ? 'mu' : focusUf ? 'uf' : 'br';
+  const code = scope === 'mu' ? `${focusUf}${munRef!.tseCode}` : scope === 'uf' ? focusUf! : 'br';
+  const title =
+    scope === 'mu' ? `${titleCase(munRef!.name)}, ${ufMeta?.sigla ?? ''}` : scope === 'uf' ? (ufMeta?.name ?? '') : 'Brasil';
+  const dockEnabled = scope !== 'br' || hasNational;
+  const q = useElectionResult(round, officeId, scope, code, title, dockEnabled);
+
+  /* mantém os números anteriores (esmaecidos) enquanto o novo recorte chega,
+     para que eles possam "contar" de um valor para o outro */
+  const [prev, setPrev] = useState<ParsedResult | null>(null);
+  useEffect(() => {
+    if (q.data) setPrev(q.data);
+  }, [q.data]);
+  const fallback =
+    !q.data && dockEnabled && q.loading && !q.error && prev && prev.officeId === officeId && prev.round === round ? prev : null;
+  const shown = q.data ?? fallback;
+  const stale = !q.data && !!fallback;
+
+  /* nomes dos candidatos (para tooltip e legenda dos municípios) */
+  const [names, setNames] = useState<Names>({});
+  useEffect(() => {
+    if (!q.data) return;
+    setNames((n) => {
+      let changed = false;
+      const next = { ...n };
+      for (const c of q.data!.candidates) {
+        if (!next[c.sqcand]) {
+          next[c.sqcand] = { name: c.shortName, color: c.color };
+          changed = true;
+        }
+      }
+      return changed ? next : n;
+    });
+  }, [q.data]);
+
+  /* visões do mapa com "última cor conhecida" durante o recarregamento */
+  const selKey = `${round}|${officeId}`;
+  const [knownStates, setKnownStates] = useState<{ key: string; map: Record<string, StateLeader> }>({ key: selKey, map: {} });
+  useEffect(() => {
+    setKnownStates((p) => {
+      const map = p.key === selKey ? { ...p.map } : {};
+      for (const [k, v] of Object.entries(stateLeaders)) if (!v.loading) map[k] = v;
+      return { key: selKey, map };
+    });
+  }, [stateLeaders, selKey]);
+  const stateViews = useMemo(() => {
+    const known = knownStates.key === selKey ? knownStates.map : {};
+    const out: Record<string, RegionView> = {};
+    for (const uf of UF_LIST) {
+      const cur = stateLeaders[uf.slug];
+      out[uf.slug] = stateView(cur?.loading && known[uf.slug] ? known[uf.slug] : cur);
+    }
+    return out;
+  }, [stateLeaders, knownStates, selKey]);
+
+  const munKey = `${selKey}|${focusUf}`;
+  const [knownMuns, setKnownMuns] = useState<{ key: string; map: Record<string, MunLeader> }>({ key: munKey, map: {} });
+  useEffect(() => {
+    setKnownMuns((p) => {
+      const map = p.key === munKey ? { ...p.map } : {};
+      for (const [k, v] of Object.entries(munLeaders)) if (!v.loading) map[k] = v;
+      return { key: munKey, map };
+    });
+  }, [munLeaders, munKey]);
+  const munViews = useMemo(() => {
+    const known = knownMuns.key === munKey ? knownMuns.map : {};
+    const out: Record<string, RegionView> = {};
+    for (const [ibge, cur] of Object.entries(munLeaders)) {
+      out[ibge] = munView(cur.loading && known[ibge] ? known[ibge] : cur, names);
+    }
+    return out;
+  }, [munLeaders, knownMuns, munKey, names]);
+
+  /* ------------------------------------------------------------- navegação */
+  const fly = useCallback((target: CameraTarget) => setCamera((c) => ({ target, seq: c.seq + 1 })), []);
+  const setTargetQuiet = useCallback((target: CameraTarget) => setCamera((c) => ({ target, seq: c.seq })), []);
+
+  const goCountry = useCallback(() => {
+    setFocusUf(null);
+    setPinned(null);
+    setZoomMun(null);
+    setHoverMun(null);
+    fly({ kind: 'country' });
+  }, [fly]);
+
+  const goState = useCallback(
+    (uf: string) => {
+      if (disabledStates?.has(uf)) return;
+      setFocusUf(uf);
+      setPinned(null);
+      setZoomMun(null);
+      fly({ kind: 'state', uf });
+    },
+    [disabledStates, fly],
   );
-  const panelBody = (
-    <DetailBody
-      key={`${officeId}-${round}`}
-      data={detailData}
-      loading={detailQ.loading}
-      error={detailQ.error}
-      photoUf={photoUf}
-      majority={officeId === '1' || officeId === '3'}
-    />
+
+  const onActivate = useCallback(
+    (kind: 'state' | 'mun', id: string) => {
+      if (kind === 'state') goState(id);
+      else if (focusUf) {
+        setPinned(id);
+        fly({ kind: 'mun', uf: focusUf, ibge: id });
+      }
+    },
+    [goState, focusUf, fly],
   );
+
+  const onZoomFocus = useCallback(
+    (uf: string | null) => {
+      setFocusUf(uf);
+      setPinned(null);
+      setZoomMun(null);
+      setTargetQuiet(uf ? { kind: 'state', uf } : { kind: 'country' });
+    },
+    [setTargetQuiet],
+  );
+
+  const onZoomMun = useCallback(
+    (ibge: string | null) => {
+      setZoomMun(ibge);
+      setPinned((p) => (p && p !== ibge ? null : p));
+    },
+    [],
+  );
+
+  /* hover só troca o dock depois de uma pausa, para não piscar */
+  const hoverTimer = useRef(0);
+  const onHoverMun = useCallback((ibge: string | null) => {
+    window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setHoverMun(ibge), ibge ? 260 : 450);
+  }, []);
+
+  const onSearchPick = useCallback(
+    (m: MunicipalityRef) => {
+      const uf = m.uf.toLowerCase();
+      if (runoffGov && !isRunoffUf(uf)) setOfficeId('1');
+      setFocusUf(uf);
+      setPinned(m.ibgeCode);
+      setZoomMun(null);
+      setSearching(false);
+      fly({ kind: 'mun', uf, ibge: m.ibgeCode });
+    },
+    [runoffGov, fly],
+  );
+
+  const back = useCallback(() => {
+    if (pinned || zoomMun) {
+      setPinned(null);
+      setZoomMun(null);
+      setHoverMun(null);
+      if (focusUf) fly({ kind: 'state', uf: focusUf });
+    } else if (focusUf) goCountry();
+  }, [pinned, zoomMun, focusUf, fly, goCountry]);
+
+  const changeRound = (r: Round) => {
+    setRound(r);
+    const nextOffice = r === 2 && officeId !== '1' && officeId !== '3' ? '1' : officeId;
+    if (nextOffice !== officeId) setOfficeId(nextOffice);
+    if (nextOffice === '3' && r === 2 && focusUf && !isRunoffUf(focusUf)) goCountry();
+  };
+  const changeOffice = (id: OfficeId) => {
+    setOfficeId(id);
+    if (id === '3' && round === 2 && focusUf && !isRunoffUf(focusUf)) goCountry();
+  };
+
+  /* teclado: Esc volta, + − aproximam, 0 recentraliza */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.key === 'Escape' && !pop) back();
+      else if (e.key === '+' || e.key === '=') mapApi.current?.zoomBy(1.6);
+      else if (e.key === '-' || e.key === '_') mapApi.current?.zoomBy(1 / 1.6);
+      else if (e.key === '0') mapApi.current?.recenter();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [back, pop]);
 
   useEffect(() => {
-    document.title = mun
-      ? `${mun.name} (${mun.uf}) · Apuração 2026`
-      : ufMeta
-        ? `${ufMeta.name} · Apuração 2026`
-        : 'Apuração 2026 · Eleições gerais';
-  }, [mun, ufMeta]);
+    document.title = scope === 'br' ? 'Apuração das Eleições 2026' : `${title} · Apuração 2026`;
+  }, [scope, title]);
+
+  /* ----------------------------------------------------------------- legenda */
+  const legend = useMemo<{ items: LegendItem[]; unit: string; hasError: boolean }>(() => {
+    const counts = new Map<string, LegendItem>();
+    const base = shown?.candidates ?? [];
+    for (const c of base.slice(0, 2)) counts.set(c.shortName, { key: c.sqcand, name: c.shortName, color: c.color, count: 0 });
+    const views = Object.values(focusUf ? munViews : stateViews);
+    let hasError = false;
+    for (const v of views) {
+      if (v.status === 'error') hasError = true;
+      if (v.status !== 'leader' || !v.leaderName || !v.color) continue;
+      const it = counts.get(v.leaderName) ?? { key: v.leaderName, name: v.leaderName, color: v.color, count: 0 };
+      it.count += 1;
+      counts.set(v.leaderName, it);
+    }
+    const items = [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 4);
+    return { items, unit: focusUf ? 'mun.' : 'UF', hasError };
+  }, [shown, focusUf, munViews, stateViews]);
+
+  /* ---------------------------------------------------------------- layout */
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const [insets, setInsets] = useState<Insets>({ top: 64, right: 64, bottom: 200, left: 0 });
+  useLayoutEffect(() => {
+    const measure = () => {
+      const tb = toolbarRef.current?.getBoundingClientRect();
+      const dk = dockRef.current?.getBoundingClientRect();
+      const frame = dockRef.current?.offsetParent?.getBoundingClientRect();
+      if (!tb || !dk || !frame) return;
+      const next: Insets = desktop
+        ? { top: 60, right: 64, bottom: frame.bottom - dk.top + 8, left: 0 }
+        : { top: tb.bottom - frame.top + 4, right: 0, bottom: frame.bottom - dk.top + 4, left: 0 };
+      setInsets((p) =>
+        Math.abs(p.top - next.top) < 2 && Math.abs(p.bottom - next.bottom) < 2 && p.right === next.right ? p : next,
+      );
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (toolbarRef.current) ro.observe(toolbarRef.current);
+    if (dockRef.current) ro.observe(dockRef.current);
+    return () => ro.disconnect();
+  }, [desktop]);
+
+  const crumbs: Crumb[] = [{ label: 'Brasil', onClick: goCountry }];
+  if (ufMeta) crumbs.push({ label: desktop ? ufMeta.name : ufMeta.sigla, onClick: () => goState(ufMeta.slug) });
+  if (munRef) crumbs.push({ label: titleCase(munRef.name) });
 
   const roundItems = ROUND_OPTIONS.map((r) => ({ value: r.round, label: r.label }));
   const officeItems = OFFICES.filter((o) => round === 1 || o.id === '1' || o.id === '3').map((o) => ({
@@ -236,191 +332,335 @@ export default function App() {
     label: o.label,
   }));
 
-  const mapTitle = mun
-    ? `${mun.name}, ${mun.uf}`
-    : ufMeta
-      ? `Municípios de ${ufMeta.name}`
-      : 'Quem lidera em cada estado';
+  const photoUf = officeId === '1' ? 'br' : (focusUf ?? 'br');
+  const kindLabel = scope === 'mu' ? 'Município' : scope === 'uf' ? 'Estado' : 'País';
+  const context = `${office.label} · ${round}º turno`;
 
-  return (
-    <div className="min-h-dvh">
-      <TopProgress active={loadingAny} />
-      <TopBar munIndex={munIndex} onPick={onSearchPick} onHome={goCountry} />
+  const awaiting = !hasStarted(shown?.turnout);
+  const liveSummary = shown && !stale ? summarize(title, shown) : '';
 
-      <main className="frame">
-        {/* ------------------------------------------------ 01 · resultado */}
-        <section className="relative overflow-hidden px-page pb-section pt-10 sm:pt-14" aria-labelledby="resultado">
-          <div className="hero-glow" aria-hidden />
-          <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <SectionLabel n={1} text={hasNational ? `${office.label} · Brasil` : office.label} id="resultado" />
-            <div className="flex flex-wrap items-center gap-2">
-              <Tabs<Round> label="Turno" value={round} onChange={changeRound} items={roundItems} />
-              <div className="-mx-page max-w-[100vw] px-page scroll-x sm:mx-0 sm:px-0">
-                <Tabs<OfficeId> label="Cargo" value={officeId} onChange={changeOffice} items={officeItems} />
-              </div>
-            </div>
-          </div>
-          <div className="relative mt-10 sm:mt-14">
-            <Hero
-              round={round}
-              officeId={officeId}
-              officeLabel={office.label}
-              national={hasNational ? { data: national, loading: nationalQ.loading, error: nationalQ.error } : null}
-              stateLeaders={stateLeaders}
-              onPickState={goStateFromHero}
-            />
-          </div>
-        </section>
+  const emptyDock = !dockEnabled ? (
+    <StateChooser
+      runoff={runoffGov}
+      officeLabel={office.label}
+      stateViews={stateViews}
+      onPick={goState}
+      mobile={!desktop}
+    />
+  ) : undefined;
 
-        <div className="rule" />
-
-        {/* ------------------------------------------------ 02 · mapa */}
-        <section className="px-page py-section" aria-labelledby="mapa">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <SectionLabel n={2} text={ufMeta ? `Mapa · ${ufMeta.sigla}` : 'Mapa · Brasil'} id="mapa" />
-              <h2 className="mt-4 text-title font-medium text-ink sm:text-headline">{mapTitle}</h2>
-            </div>
-            <p className="max-w-sm text-small text-ink-3 sm:text-right">
-              {ufSlug
-                ? 'Toque em um município para ver o resultado dele.'
-                : runoffGov
-                  ? 'Só os estados em destaque têm 2º turno para governador.'
-                  : 'A cor mostra quem está à frente. Toque em um estado para abrir os municípios.'}
-            </p>
-          </div>
-
-          <div
-            ref={mapCardRef}
-            className="card dot-grid relative mt-8 aspect-square overflow-hidden sm:aspect-[4/3] lg:aspect-auto lg:h-[min(80vh,760px)] lg:min-h-[580px]"
-          >
-            <BrazilMap
-              ufSlug={ufSlug ?? undefined}
-              selectedIbge={mun?.ibge}
-              stateLeaders={stateLeaders}
-              munLeaders={ufSlug ? munLeaders : undefined}
-              candidateNames={candidateNames}
-              insetRight={desktop && panelOpen ? PANEL_INSET : 0}
-              insetTop={desktop ? 64 : 52}
-              awaiting={awaiting}
-              disabledStates={runoffDisabled}
-              onSelectState={goState}
-              onSelectMunicipality={goMunicipality}
-            />
-
-            {/* barra do mapa */}
-            <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-start gap-2">
-              <div className="pointer-events-auto flex h-9 items-center gap-0.5 rounded-pill bg-(--glass) px-1 shadow-sm backdrop-blur-md">
-                {ufSlug && (
-                  <Button variant="ghost" size="sm" icon onClick={goCountry} aria-label="Voltar para o Brasil">
-                    <Icon name="arrow-left" size={14} />
-                  </Button>
-                )}
-                <Crumb onClick={goCountry} current={!ufSlug}>
-                  Brasil
-                </Crumb>
-                {ufMeta && (
-                  <>
-                    <Icon name="chevron-right" size={12} className="text-ink-4" />
-                    <Crumb onClick={() => setMun(null)} current={!mun}>
-                      {desktop ? ufMeta.name : ufMeta.sigla}
-                    </Crumb>
-                  </>
-                )}
-                {mun && (
-                  <>
-                    <Icon name="chevron-right" size={12} className="text-ink-4" />
-                    <Crumb current>{mun.name}</Crumb>
-                  </>
-                )}
-              </div>
-              {ufSlug && munInUf.length > 0 && munProgress < 100 && (
-                <div className="flex h-9 items-center gap-2 rounded-pill bg-(--glass) px-3 shadow-sm backdrop-blur-md">
-                  <span className="track h-1 w-14">
-                    <span
-                      className="block h-full bg-ink transition-[width] duration-300"
-                      style={{ width: `${munProgress}%` }}
-                    />
-                  </span>
-                  <span className="tnum font-mono text-micro text-ink-3">{munProgress}%</span>
-                </div>
-              )}
-            </div>
-
-            {desktop && (
-              <div className="tooltip pointer-events-auto absolute bottom-3 left-3 z-10 max-w-[calc(100%-450px)] px-4 py-3">
-                <MapLegend items={legend.items} unit={legend.unit} />
-              </div>
-            )}
-
-            {desktop && (
-              <Panel
-                open={panelOpen}
-                mode="side"
-                onClose={closePanel}
-                header={panelHeader}
-                contentKey={mun?.tse ?? ufSlug ?? ''}
-                label="Detalhes do recorte"
-              >
-                {panelBody}
-              </Panel>
-            )}
-          </div>
-
-          {!desktop && <MapLegend items={legend.items} unit={legend.unit} className="mt-5" />}
-        </section>
-
-        <div className="rule" />
-
-        <footer className="flex flex-col gap-3 px-page py-10 text-caption text-ink-3 sm:flex-row sm:items-center sm:justify-between">
-          <p>
-            Fonte: <span className="font-mono text-ink-2">resultados.tse.jus.br</span>. Atualiza sozinho a cada minuto.
-          </p>
-          <p>Projeto independente, sem ligação com o TSE.</p>
-        </footer>
-      </main>
-
-      {!desktop && panelOpen && <div className="h-[46dvh]" aria-hidden />}
-      {!desktop && (
-        <Panel
-          open={panelOpen}
-          mode="sheet"
-          onClose={closePanel}
-          header={panelHeader}
-          contentKey={mun?.tse ?? ufSlug ?? ''}
-          label="Detalhes do recorte"
-        >
-          {panelBody}
-        </Panel>
-      )}
-    </div>
+  const dock = (
+    <Dock
+      mode={desktop ? 'desktop' : 'mobile'}
+      kindLabel={kindLabel}
+      title={title}
+      context={context}
+      data={shown}
+      stale={stale}
+      loading={q.loading}
+      error={q.error}
+      onRetry={() => void q.refresh()}
+      photoUf={photoUf}
+      majority={officeId === '1' || officeId === '3'}
+      empty={emptyDock}
+    />
   );
-}
 
-function SectionLabel({ n, text, id }: { n: number; text: string; id?: string }) {
-  return (
-    <p id={id} className="eyebrow flex items-center gap-2">
-      <span className="text-ink-4">[</span>
-      <span className="text-ink">{String(n).padStart(2, '0')}</span>
-      <span className="text-ink-4">]</span>
-      <TextScramble text={text} />
+  const progress =
+    focusUf && munInUf.length > 0 && munProgress < 100 ? (
+      <span className="float flex h-9 items-center gap-2 rounded-pill px-3" aria-label={`Municípios carregados: ${munProgress}%`}>
+        <span className="track h-1 w-12">
+          <span className="block h-full bg-ink transition-[width] duration-300" style={{ width: `${munProgress}%` }} />
+        </span>
+        <span className="tnum font-mono text-nano text-ink-3">{munProgress}%</span>
+      </span>
+    ) : null;
+
+  const map = (
+    <BrazilMap
+      camera={camera}
+      focusUf={focusUf}
+      highlightIbge={activeMun}
+      stateViews={stateViews}
+      munViews={munViews}
+      disabledStates={disabledStates}
+      awaiting={awaiting}
+      insets={insets}
+      touch={touch}
+      onActivate={onActivate}
+      onZoomFocus={onZoomFocus}
+      onZoomMun={onZoomMun}
+      onHoverMun={onHoverMun}
+      onLevel={setLevel}
+      apiRef={mapApi}
+    />
+  );
+
+  const liveRegion = (
+    <p className="sr-only" aria-live="polite" aria-atomic="true">
+      {liveSummary}
     </p>
   );
+
+  const sources = (
+    <>
+      <StatesSource key={`${round}|${officeId}`} round={round} officeId={officeId} onData={setStatesSrc} />
+      {focusUf && (
+        <MunSource
+          key={munSrcKey}
+          srcKey={munSrcKey}
+          round={round}
+          officeId={officeId}
+          uf={focusUf}
+          municipalities={munInUf}
+          onData={setMunSrc}
+        />
+      )}
+    </>
+  );
+
+  /* ---------------------------------------------------------------- desktop */
+  if (desktop) {
+    return (
+      <div className="flex h-dvh gap-2 bg-void p-2">
+        {sources}
+        <Rail
+          top={[
+            { id: 'home', label: 'Mapa do Brasil', icon: 'map', onClick: goCountry, active: !focusUf },
+            {
+              id: 'search',
+              label: 'Buscar município  /',
+              icon: 'search',
+              onClick: () => document.querySelector<HTMLInputElement>('#busca input')?.focus(),
+            },
+            { id: 'legend', label: legendOn ? 'Esconder legenda' : 'Mostrar legenda', icon: 'layers', onClick: () => setLegendOn((v) => !v), active: legendOn },
+            { id: 'keys', label: 'Atalhos de teclado', icon: 'keyboard', onClick: () => setPop((p) => (p === 'keys' ? null : 'keys')), active: pop === 'keys' },
+          ]}
+          bottom={[
+            { id: 'about', label: 'Sobre este site', icon: 'info', onClick: () => setPop((p) => (p === 'about' ? null : 'about')), active: pop === 'about' },
+            { id: 'tse', label: 'Abrir resultados.tse.jus.br', icon: 'external', onClick: () => window.open(TSE_URL, '_blank', 'noopener') },
+          ]}
+        />
+        <Popover open={pop === 'keys'} onClose={() => setPop(null)} className="left-16 top-40 w-64">
+          <ShortcutsContent />
+        </Popover>
+        <Popover open={pop === 'about'} onClose={() => setPop(null)} className="bottom-4 left-16 w-72">
+          <AboutContent />
+        </Popover>
+
+        <main className="relative min-w-0 flex-1 overflow-hidden rounded-[20px] border border-line bg-bg">
+          {map}
+
+          <div ref={toolbarRef} className="pointer-events-none absolute inset-x-3 top-3 z-20 flex items-start justify-between gap-3">
+            <div className="flex w-[19.5rem] shrink-0 flex-col items-start gap-2">
+              <div className="float pointer-events-auto flex h-11 items-center rounded-xl pl-2 pr-3.5">
+                <Brand />
+              </div>
+              <div className="pointer-events-auto flex items-center gap-2">
+                <Breadcrumb items={crumbs} />
+                {progress}
+              </div>
+              {legendOn && <MapLegend items={legend.items} unit={legend.unit} hasError={legend.hasError} className="pointer-events-auto" />}
+            </div>
+
+            <div className="float pointer-events-auto flex h-11 shrink-0 items-center gap-1.5 rounded-pill px-1.5 min-[1500px]:absolute min-[1500px]:left-1/2 min-[1500px]:top-0 min-[1500px]:-translate-x-1/2">
+              <Tabs<Round> label="Turno" value={round} onChange={changeRound} items={roundItems} />
+              <span className="h-5 w-px bg-line-strong" aria-hidden />
+              <Tabs<OfficeId> label="Cargo" value={officeId} onChange={changeOffice} items={officeItems} />
+            </div>
+
+            <div id="busca" className="float pointer-events-auto ml-auto flex h-11 w-52 shrink-0 items-center rounded-pill px-1.5 min-[1500px]:w-72">
+              <MunicipalitySearch items={munIndex} onPick={onSearchPick} className="w-full" />
+            </div>
+          </div>
+
+          <ZoomControls
+            className="absolute right-3 top-1/2 z-20 -translate-y-1/2"
+            onIn={() => mapApi.current?.zoomBy(1.6)}
+            onOut={() => mapApi.current?.zoomBy(1 / 1.6)}
+            onRecenter={() => mapApi.current?.recenter()}
+          />
+
+          <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 flex justify-center">
+            <div ref={dockRef} className="w-full max-w-[1080px]">
+              {dock}
+            </div>
+          </div>
+          {liveRegion}
+        </main>
+      </div>
+    );
+  }
+
+  /* ----------------------------------------------------------------- mobile */
+  return (
+    <main className="relative h-dvh overflow-hidden bg-bg">
+      {sources}
+      {map}
+
+      <div
+        ref={toolbarRef}
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-1.5 px-2 pt-[max(0.5rem,env(safe-area-inset-top))]"
+      >
+        {searching ? (
+          <div className="float pointer-events-auto flex h-14 items-center gap-1 rounded-2xl px-2">
+            <MunicipalitySearch items={munIndex} onPick={onSearchPick} className="flex-1" autoFocus onDone={() => setSearching(false)} />
+            <button type="button" className="btn shrink-0" onClick={() => setSearching(false)}>
+              Cancelar
+            </button>
+          </div>
+        ) : (
+          <div className="float pointer-events-auto relative flex h-14 items-center gap-1 rounded-2xl pl-2.5 pr-1">
+            <div className="min-w-0 flex-1">
+              <Brand compact onAbout={() => setPop((p) => (p === 'about' ? null : 'about'))} />
+            </div>
+            <button type="button" className="btn btn-icon shrink-0" aria-label="Buscar município" onClick={() => setSearching(true)}>
+              <Icon name="search" size={18} />
+            </button>
+            <Popover open={pop === 'about'} onClose={() => setPop(null)} className="right-0 top-full mt-2 w-[min(20rem,calc(100vw-1rem))]">
+              <AboutContent />
+            </Popover>
+          </div>
+        )}
+        <div className="pointer-events-auto -mx-2 flex gap-1.5 px-2 scroll-x">
+          <div className="float flex shrink-0 items-center rounded-pill p-0.5">
+            <Tabs<Round> label="Turno" value={round} onChange={changeRound} items={roundItems} />
+          </div>
+          <div className="float flex shrink-0 items-center rounded-pill p-0.5">
+            <Tabs<OfficeId> label="Cargo" value={officeId} onChange={changeOffice} items={officeItems} />
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Breadcrumb items={crumbs} className="pointer-events-auto h-10 min-w-0" />
+          {progress}
+          <button
+            type="button"
+            className="float pointer-events-auto btn btn-icon ml-auto shrink-0 rounded-pill"
+            onClick={() => mapApi.current?.recenter()}
+            aria-label="Recentralizar mapa"
+          >
+            <Icon name="target" size={17} />
+          </button>
+        </div>
+        {legend.items.length > 0 && (
+          <MapLegend
+            items={legend.items}
+            unit={legend.unit}
+            hasError={legend.hasError}
+            layout="row"
+            className="float pointer-events-auto max-w-full self-start overflow-hidden rounded-pill px-3 py-1.5 scroll-x [mask-image:linear-gradient(90deg,#000_85%,transparent)]"
+          />
+        )}
+      </div>
+
+      <div ref={dockRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-30">
+        {dock}
+      </div>
+      {liveRegion}
+    </main>
+  );
 }
 
-function Crumb({ children, onClick, current }: { children: string; onClick?: () => void; current?: boolean }) {
+/* -------------------------------------------------------------------------- */
+
+interface StatesSrc {
+  key: string;
+  map: Record<string, StateLeader>;
+  reload: () => Promise<void> | void;
+}
+interface MunSrc {
+  key: string;
+  leaders: Record<string, MunLeader>;
+  progress: number;
+  reload: () => Promise<void> | void;
+}
+const EMPTY_STATES: StatesSrc = { key: '', map: {}, reload: () => undefined };
+const EMPTY_MUNS: MunSrc = { key: '', leaders: {}, progress: 0, reload: () => undefined };
+
+function StatesSource({ round, officeId, onData }: { round: Round; officeId: OfficeId; onData: (s: StatesSrc) => void }) {
+  const { map, reload } = useStateLeaders(round, officeId, true);
+  useEffect(() => {
+    onData({ key: `${round}|${officeId}`, map, reload });
+  }, [map, reload, round, officeId, onData]);
+  return null;
+}
+
+function MunSource({
+  srcKey,
+  round,
+  officeId,
+  uf,
+  municipalities,
+  onData,
+}: {
+  srcKey: string;
+  round: Round;
+  officeId: OfficeId;
+  uf: string;
+  municipalities: MunicipalityRef[];
+  onData: (s: MunSrc) => void;
+}) {
+  const { leaders, progress, reload } = useMunicipalityResults(round, officeId, uf, municipalities, true);
+  useEffect(() => {
+    onData({ key: srcKey, leaders, progress, reload });
+  }, [leaders, progress, reload, srcKey, onData]);
+  return null;
+}
+
+function summarize(title: string, d: ParsedResult): string {
+  const top = d.candidates
+    .slice(0, 2)
+    .map((c) => `${titleCase(c.shortName)} ${fmtPct(c.percent)}`)
+    .join(', ');
+  return `${title}: ${top}. ${fmtPct(d.turnout.sectionsPct)} das urnas apuradas.`;
+}
+
+function StateChooser({
+  runoff,
+  officeLabel,
+  stateViews,
+  onPick,
+  mobile,
+}: {
+  runoff: boolean;
+  officeLabel: string;
+  stateViews: Record<string, RegionView>;
+  onPick: (uf: string) => void;
+  mobile: boolean;
+}) {
+  const ufs = UF_LIST.filter((u) => !runoff || isRunoffUf(u.slug));
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!onClick}
-      aria-current={current ? 'page' : undefined}
-      className={
-        'max-w-40 truncate rounded-pill px-2.5 py-1 text-caption font-medium transition-colors ' +
-        (current ? 'text-ink' : 'text-ink-3 hover:bg-hover hover:text-ink')
-      }
-    >
-      {children}
-    </button>
+    <div className="flex flex-col gap-2.5">
+      <p className="text-small text-ink-2">
+        {runoff
+          ? `Só ${ufs.length} estados têm 2º turno para ${officeLabel.toLowerCase()}. Escolha um no mapa ou aqui.`
+          : `${officeLabel} não tem resultado nacional: cada estado tem a sua disputa. Escolha um no mapa ou aqui.`}
+      </p>
+      <ul className={mobile ? '-mx-4 flex gap-1.5 px-4 scroll-x' : 'flex flex-wrap gap-1.5'}>
+        {ufs.map((u) => {
+          const v = stateViews[u.slug];
+          return (
+            <li key={u.slug} className="shrink-0">
+              <button
+                type="button"
+                onClick={() => onPick(u.slug)}
+                title={u.name}
+                className="cell flex h-8 items-center gap-1.5 px-2.5 font-mono text-caption text-ink transition-colors hover:bg-hover pointer-coarse:h-11"
+              >
+                <span
+                  className="size-2 rounded-full"
+                  style={{
+                    background:
+                      v?.status === 'leader' && v.color ? candFill(v.color) : v?.status === 'neutral' ? 'var(--map-neutral)' : 'var(--map-loading)',
+                  }}
+                  aria-hidden
+                />
+                {runoff ? u.name : u.sigla}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
