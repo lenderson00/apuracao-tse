@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import { candFill, STEP_LABELS, stepFill } from '../lib/ui/color';
 import { titleCase } from '../lib/ui/format';
 import { Icon } from './ui/Icon';
+import { Pct } from './ui/Num';
 
 export const TSE_URL = 'https://resultados.tse.jus.br';
 
@@ -164,6 +165,10 @@ export interface MapSummary {
   unit: 'UF' | 'municípios';
   updatedAt: Date | null;
   progress: number | null;
+  /** seções totalizadas no recorte mostrado (campo pst do TSE) */
+  sectionsPct: number | null;
+  /** 1º turno: resultado final, o mapa não é mais atualizado */
+  final: boolean;
 }
 
 const hhmm = (d: Date) =>
@@ -203,6 +208,11 @@ export function MapPanel({ s, title, bare, className }: { s: MapSummary; title: 
               </div>
             ))}
           </div>
+          {s.sectionsPct !== null && (
+            <p className="mt-2 text-nano text-ink-3">
+              Apurado: <Pct value={s.sectionsPct} className="text-ink-2" /> das seções
+            </p>
+          )}
         </div>
       )}
       <div className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-2 font-mono text-nano text-ink-3">
@@ -218,7 +228,7 @@ export function MapPanel({ s, title, bare, className }: { s: MapSummary; title: 
             <span className="tnum">{s.progress}%</span>
           </span>
         ) : (
-          <span>a cada 2 min</span>
+          <span>{s.final ? 'resultado final' : 'a cada 2 min'}</span>
         )}
       </div>
       <svg width="0" height="0" className="absolute" aria-hidden>

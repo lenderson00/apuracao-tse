@@ -366,8 +366,10 @@ export default function App() {
       unit: focusUf ? 'municípios' : 'UF',
       updatedAt: mapUpdatedAt,
       progress: focusUf && munInUf.length ? munProgress : null,
+      sectionsPct: shown && !stale ? shown.turnout.sectionsPct : null,
+      final: finalRound,
     };
-  }, [shown, focusUf, munInUf, munViews, stateViews, mapUpdatedAt, munProgress]);
+  }, [shown, stale, focusUf, munInUf, munViews, stateViews, mapUpdatedAt, munProgress, finalRound]);
 
   /* ---------------------------------------------------------------- layout */
   const toolbarRef = useRef<HTMLDivElement>(null);
