@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import clsx from 'clsx';
 import { candFill, STEP_LABELS, stepFill } from '../lib/ui/color';
 import { titleCase } from '../lib/ui/format';
@@ -8,10 +8,13 @@ export const TSE_URL = 'https://resultados.tse.jus.br';
 
 /* ------------------------------------------------------------------ marca */
 
-export function Mark({ size = 28 }: { size?: number }) {
+export function Mark({ size = 28, ring = true }: { size?: number; ring?: boolean }) {
   return (
     <span
-      className="grid shrink-0 place-items-center rounded-[9px] bg-overlay shadow-[inset_0_0_0_1px_var(--line-strong)]"
+      className={clsx(
+        'grid shrink-0 place-items-center rounded-(--r-inner) bg-overlay',
+        ring && 'shadow-[inset_0_0_0_1px_var(--line-strong)]',
+      )}
       style={{ width: size, height: size }}
       aria-hidden
     >
@@ -28,7 +31,7 @@ export function Mark({ size = 28 }: { size?: number }) {
 export function Brand({ compact }: { compact?: boolean }) {
   return (
     <div className={clsx('flex min-w-0 items-center', compact ? 'gap-2' : 'gap-2.5')}>
-      <Mark size={compact ? 26 : 28} />
+      <Mark size={compact ? 28 : 32} ring={false} />
       <div className="min-w-0 leading-none">
         <p className={clsx('truncate font-semibold tracking-[-0.01em] text-ink', compact ? 'text-[0.78rem]' : 'text-small')}>
           Apuração 2026
@@ -74,7 +77,7 @@ export function Breadcrumb({
       aria-label="Você está em"
       className={clsx(
         'flex min-w-0 items-center gap-0.5',
-        bare ? '-ml-2' : 'float h-(--h-2) px-1 pr-2',
+        bare ? '-ml-2' : 'float h-(--h-2) p-1 pr-2',
         className,
       )}
     >
@@ -89,7 +92,7 @@ export function Breadcrumb({
               disabled={last}
               aria-current={last ? 'location' : undefined}
               className={clsx(
-                'max-w-44 truncate rounded-(--r-inner) px-2 py-1 text-caption font-medium transition-colors pointer-coarse:min-w-11',
+                'flex h-7 max-w-44 items-center truncate rounded-(--r-inner) px-2.5 text-caption font-medium transition-colors pointer-coarse:min-w-11',
                 'pointer-coarse:flex pointer-coarse:h-11 pointer-coarse:items-center pointer-coarse:px-2.5 pointer-coarse:text-small',
                 last ? 'text-ink' : 'text-ink-3 hover:bg-hover hover:text-ink',
               )}
@@ -123,7 +126,7 @@ export function ZoomControls({
   const [pct, setPct] = useState(100);
   useEffect(() => subscribe((p) => setPct(Math.round(p))), [subscribe]);
   return (
-    <div className={clsx('float flex h-(--h-2) items-center gap-0.5 px-0.5', className)} role="group" aria-label="Zoom do mapa">
+    <div className={clsx('float flex h-(--h-2) items-center gap-0.5 p-1', className)} role="group" aria-label="Zoom do mapa">
       <button type="button" className="btn btn-icon size-7" onClick={onOut} aria-label="Afastar" title="Afastar (−)">
         <Icon name="minus" size={14} />
       </button>
@@ -133,7 +136,7 @@ export function ZoomControls({
       <button type="button" className="btn btn-icon size-7" onClick={onIn} aria-label="Aproximar" title="Aproximar (+)">
         <Icon name="plus" size={14} />
       </button>
-      <span className="mx-0.5 h-4 w-px bg-line-strong" aria-hidden />
+      <span className="seg-divider mx-1" aria-hidden />
       <button type="button" className="btn btn-icon size-7" onClick={onRecenter} aria-label="Recentralizar" title="Recentralizar (0)">
         <Icon name="target" size={14} />
       </button>
@@ -359,6 +362,52 @@ export function Rail({ top, bottom }: { top: RailAction[]; bottom: RailAction[] 
       <span className="my-3 h-px w-6 bg-line" aria-hidden />
       <ul className="flex flex-col gap-1.5">{top.map(btn)}</ul>
       <ul className="mt-auto flex flex-col gap-1.5">{bottom.map(btn)}</ul>
+      <span className="my-3 h-px w-6 bg-line" aria-hidden />
+      <Credit variant="rail" />
     </aside>
+  );
+}
+
+/* ---------------------------------------------------------------- crédito */
+
+export const CREDIT_URL = 'https://x.com/lendersonmacedo';
+
+function XLogo({ size = 11 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden className="shrink-0">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77Z" />
+    </svg>
+  );
+}
+
+/**
+ * "Feito por Lenderson" com link para o X.
+ * rail: texto na vertical, no pé do rail (desktop). chip: pill pequena e discreta (mobile).
+ */
+export function Credit({ variant, className, style }: { variant: 'rail' | 'chip'; className?: string; style?: CSSProperties }) {
+  const label = 'Feito por Lenderson';
+  return (
+    <a
+      href={CREDIT_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`${label} (abre o perfil no X em nova aba)`}
+      title="@lendersonmacedo no X"
+      style={style}
+      className={clsx(
+        'group flex items-center whitespace-nowrap text-ink-3 transition-colors duration-150 hover:text-ink',
+        variant === 'rail'
+          ? 'gap-2 rounded-(--r-inner) px-1.5 py-2 text-micro [writing-mode:vertical-rl] rotate-180 hover:bg-hover'
+          : 'float h-8 gap-1.5 rounded-full px-3 text-micro',
+        className,
+      )}
+    >
+      <span className={variant === 'rail' ? 'rotate-180' : undefined}>
+        <XLogo size={variant === 'rail' ? 11 : 10} />
+      </span>
+      <span>
+        Feito por <span className="text-ink-2 transition-colors group-hover:text-ink">Lenderson</span>
+      </span>
+    </a>
   );
 }

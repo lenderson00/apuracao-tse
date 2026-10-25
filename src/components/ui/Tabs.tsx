@@ -1,7 +1,10 @@
 import { useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import clsx from 'clsx';
 import gsap from 'gsap';
-import { DUR, EASE, dur } from '../../lib/ui/motion';
+import { dur } from '../../lib/ui/motion';
+
+/** Indicador deslizante: curto e decidido. */
+const SLIDE = { duration: 0.35, ease: 'power3.out' } as const;
 
 export interface TabItem<T extends string | number> {
   value: T;
@@ -45,7 +48,7 @@ export function Tabs<T extends string | number>({
       }
       const vars = { x: active.offsetLeft, width: active.offsetWidth, opacity: 1 };
       if (animate && placed.current) {
-        gsap.to(ind, { ...vars, duration: dur(DUR.slow), ease: EASE.out, overwrite: true });
+        gsap.to(ind, { ...vars, duration: dur(SLIDE.duration), ease: SLIDE.ease, overwrite: true });
       } else {
         gsap.set(ind, vars);
       }
@@ -58,17 +61,20 @@ export function Tabs<T extends string | number>({
   }, [value, items.length]);
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
     const enabled = items.filter((i) => !i.disabled);
+    if (!enabled.length) return;
     const idx = enabled.findIndex((i) => i.value === value);
-    const next = enabled[(idx + (e.key === 'ArrowRight' ? 1 : -1) + enabled.length) % enabled.length];
-    if (next) {
-      e.preventDefault();
-      onChange(next.value);
-      requestAnimationFrame(() =>
-        listRef.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus(),
-      );
-    }
+    let next: TabItem<T> | undefined;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = enabled[(idx + 1) % enabled.length];
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = enabled[(idx - 1 + enabled.length) % enabled.length];
+    else if (e.key === 'Home') next = enabled[0];
+    else if (e.key === 'End') next = enabled[enabled.length - 1];
+    if (!next) return;
+    e.preventDefault();
+    if (next.value !== value) onChange(next.value);
+    requestAnimationFrame(() =>
+      listRef.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus(),
+    );
   };
 
   return (
@@ -76,6 +82,7 @@ export function Tabs<T extends string | number>({
       ref={listRef}
       role="tablist"
       aria-label={label}
+      aria-orientation="horizontal"
       onKeyDown={onKey}
       className={clsx(variant === 'pill' ? 'tabs' : 'tabs-line', className)}
     >

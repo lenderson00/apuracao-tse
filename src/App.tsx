@@ -3,6 +3,7 @@ import { BrazilMap, type Camera, type CameraTarget, type Insets, type MapApi, ty
 import {
   AboutContent,
   Brand,
+  Credit,
   Breadcrumb,
   Popover,
   Rail,
@@ -448,7 +449,7 @@ export default function App() {
   const tabsBar = (
     <>
       <Tabs<Round> label="Turno" value={round} onChange={changeRound} items={roundItems} />
-      <span className="h-5 w-px shrink-0 bg-line-strong" aria-hidden />
+      <span className="seg-divider mx-1" aria-hidden />
       <Tabs<OfficeId> label="Cargo" value={officeId} onChange={changeOffice} items={officeItems} />
     </>
   );
@@ -488,13 +489,13 @@ export default function App() {
           {/* 1ª linha: marca · abas · busca (todas com a mesma altura) */}
           <div
             ref={toolbarRef}
-            className="pointer-events-none absolute inset-x-(--edge) top-(--edge) z-20 grid grid-cols-[1fr_auto_1fr] items-center gap-3"
+            className="pointer-events-none absolute inset-x-(--edge) top-(--edge) z-30 grid grid-cols-[1fr_auto_1fr] items-center gap-3"
           >
-            <div className="float pointer-events-auto flex h-(--h-1) w-fit items-center pl-2 pr-3.5">
+            <div className="float pointer-events-auto flex h-(--h-1) w-fit items-center p-1 pr-3.5">
               <Brand />
             </div>
-            <div className="float pointer-events-auto flex h-(--h-1) items-center gap-1.5 px-1.5">{tabsBar}</div>
-            <div id="busca" className="float pointer-events-auto flex h-(--h-1) w-56 items-center justify-self-end px-1.5 min-[1500px]:w-72">
+            <div className="float pointer-events-auto flex h-(--h-1) items-center p-1">{tabsBar}</div>
+            <div id="busca" className="float pointer-events-auto flex h-(--h-1) w-56 items-center justify-self-end p-1 min-[1500px]:w-72">
               <MunicipalitySearch items={munIndex} onPick={onSearchPick} className="w-full" />
             </div>
           </div>
@@ -578,7 +579,7 @@ export default function App() {
             </Popover>
           </div>
         )}
-        <div className="float pointer-events-auto flex items-center gap-1 self-start overflow-x-auto px-1 py-0.5 scroll-x max-w-full">
+        <div className="float pointer-events-auto flex items-center self-start overflow-x-auto p-1 scroll-x max-w-full">
           {tabsBar}
         </div>
       </div>
@@ -592,6 +593,8 @@ export default function App() {
       >
         <Icon name="target" size={17} />
       </button>
+
+      <Credit variant="chip" className="pointer-events-auto absolute left-2 z-20" style={{ bottom: peek + 16 }} />
 
       <div ref={dockRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-30">
         {dock}

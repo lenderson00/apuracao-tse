@@ -16,7 +16,7 @@
   --raised: #151518; /* dock, cards */
   --overlay: #1a1a1e; /* popovers, hover */
   --hover: #1f1f24;
-  --glass: rgb(21 21 24 / 0.82);
+  --glass: rgb(19 19 22 / 0.78);
 
   /* linhas */
   --line: rgb(255 255 255 / 0.065);
@@ -37,8 +37,12 @@
 
   /* grade dos elementos flutuantes: mesma distância da borda, mesmas alturas */
   --edge: 12px;
-  --h-1: 44px; /* barras principais (marca, abas, busca) */
-  --h-2: 34px; /* pills secundárias (breadcrumb, zoom) */
+  /* contêiner = 1px de borda + 4px de respiro + item; raio externo = raio do item + respiro (concêntrico) */
+  --pad: 4px;
+  --h-1: 42px; /* barras principais (marca, abas, busca): itens de 32px */
+  --h-2: 38px; /* pills secundárias (breadcrumb, zoom): itens de 28px */
+  --hairline: rgb(255 255 255 / 0.08);
+  --seg-fill: rgb(255 255 255 / 0.09);
   --r-panel: 16px; /* painéis: dock, legenda */
   --r-control: 12px; /* contêineres de controle */
   --r-inner: 8px; /* botões e abas dentro deles */
@@ -191,7 +195,7 @@
   .float,
   .panel {
     background: var(--glass);
-    border: 1px solid var(--line-strong);
+    border: 1px solid var(--hairline);
     border-radius: var(--r-control);
     box-shadow: var(--sh-md);
     backdrop-filter: blur(16px) saturate(1.3);
@@ -200,6 +204,37 @@
 
   .panel {
     border-radius: var(--r-panel);
+  }
+  /* campo dentro de uma superfície flutuante: sem moldura própria, o anel vai para o contêiner */
+  .float .field,
+  .float .field:hover,
+  .float .field:focus {
+    background: transparent;
+    box-shadow: none;
+  }
+  .float:has(.field) {
+    transition:
+      border-color 160ms var(--ease-standard),
+      box-shadow 160ms var(--ease-standard);
+  }
+  .float:has(.field):hover {
+    border-color: var(--line-strong);
+  }
+  .float:has(.field:focus) {
+    border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+    box-shadow: var(--sh-md), 0 0 0 3px var(--accent-soft);
+  }
+  .float .kbd {
+    background: rgb(255 255 255 / 0.06);
+    box-shadow: none;
+    color: var(--text-3);
+  }
+  /* divisor fino entre grupos de um mesmo contêiner */
+  .seg-divider {
+    width: 1px;
+    height: 1rem;
+    flex-shrink: 0;
+    background: var(--hairline);
   }
 
   /* pills pequenas de status */
@@ -309,44 +344,48 @@
     }
   }
 
-  /* ---- Tabs ---- */
+  /* ---- Tabs (controle segmentado sem moldura própria: vive dentro de um .float) ---- */
   .tabs {
     position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 1px;
-    padding: 2px;
-    border-radius: 10px;
-    background: rgb(255 255 255 / 0.03);
-    box-shadow: inset 0 0 0 1px var(--line);
+    gap: 2px;
     isolation: isolate;
   }
   .tabs-indicator {
     position: absolute;
-    top: 2px;
-    bottom: 2px;
+    top: 0;
+    bottom: 0;
     left: 0;
     z-index: -1;
     border-radius: var(--r-inner);
-    background: var(--hover);
-    box-shadow: inset 0 0 0 1px var(--line-strong);
+    background: var(--seg-fill);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+    will-change: transform, width;
   }
   .tab {
     position: relative;
     display: inline-flex;
     align-items: center;
-    height: 1.875rem;
-    padding-inline: 0.7rem;
+    height: 2rem;
+    padding-inline: 0.8125rem;
     border-radius: var(--r-inner);
-    font-size: var(--text-caption);
+    font-size: var(--text-small);
     font-weight: 500;
     white-space: nowrap;
     color: var(--text-3);
-    transition: color 160ms var(--ease-standard);
+    transition:
+      color 160ms var(--ease-standard),
+      background-color 160ms var(--ease-standard);
   }
-  .tab:hover,
-  .tab[aria-selected='true'] {
+  .tab:hover {
+    color: var(--text-2);
+    background: rgb(255 255 255 / 0.035);
+  }
+  .tab[aria-selected='true'],
+  .tab[aria-selected='true']:hover {
     color: var(--text);
+    background: transparent;
   }
   .tab:disabled {
     opacity: 0.35;
@@ -356,10 +395,6 @@
     .tab {
       height: 2.5rem;
       padding-inline: 0.9rem;
-      font-size: var(--text-small);
-    }
-    .tabs {
-      padding: 2px;
     }
   }
 
@@ -372,11 +407,16 @@
   .tabs-line .tab {
     padding-inline: 0;
     border-radius: 0;
+    font-size: var(--text-caption);
+  }
+  .tabs-line .tab:hover {
+    background: transparent;
   }
   @media (pointer: coarse) {
     .tabs-line .tab {
       height: 2.75rem;
       min-width: 2.75rem;
+      font-size: var(--text-small);
     }
   }
   .tabs-line .tabs-indicator {
