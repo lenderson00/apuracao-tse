@@ -47,7 +47,7 @@ export function AdBalloon({
   const titleId = `${id}-titulo`;
 
   const show = () => {
-    setStats({ ufs: 0, muns: 0 });
+    setStats(prefersReducedMotion() ? { ...STATS } : { ufs: 0, muns: 0 });
     setMounted(true);
     setOpen(true);
   };
@@ -76,7 +76,6 @@ export function AdBalloon({
 
     if (reduced) {
       gsap.set(states, { fill: NEUTRAL, opacity: 1 });
-      setStats({ ...STATS });
       return;
     }
 

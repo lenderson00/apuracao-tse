@@ -3,34 +3,10 @@ import gsap from 'gsap';
 import { Mark } from '../components/Chrome';
 import { Icon } from '../components/ui/Icon';
 import { dur } from '../lib/ui/motion';
-
-export const CONTACT_EMAIL = 'contato@lenderson.com.br';
-const SUBJECT = 'Anuncio no site da apuracao';
-
-interface Fields {
-  nome: string;
-  marca: string;
-  contato: string;
-  mensagem: string;
-}
-
-/** Monta o mailto com assunto e corpo já preenchidos (tudo codificado). */
-export function buildMailto(f: Fields): string {
-  const body = [
-    'Oi, Lenderson. Quero anunciar no site da apuração.',
-    '',
-    `Nome: ${f.nome.trim()}`,
-    `Empresa ou marca: ${f.marca.trim() || '-'}`,
-    `WhatsApp ou e-mail: ${f.contato.trim()}`,
-    '',
-    'Mensagem:',
-    f.mensagem.trim() || '-',
-  ].join('\n');
-  return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(SUBJECT)}&body=${encodeURIComponent(body)}`;
-}
+import { buildMailto, CONTACT_EMAIL, type AdFields } from '../lib/ui/mailto';
 
 export default function Anuncie() {
-  const [f, setF] = useState<Fields>({ nome: '', marca: '', contato: '', mensagem: '' });
+  const [f, setF] = useState<AdFields>({ nome: '', marca: '', contato: '', mensagem: '' });
   const [sent, setSent] = useState(false);
   const root = useRef<HTMLDivElement>(null);
 
@@ -50,7 +26,7 @@ export default function Anuncie() {
     return () => ctx.revert();
   }, []);
 
-  const set = (k: keyof Fields) => (e: { target: { value: string } }) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const set = (k: keyof AdFields) => (e: { target: { value: string } }) => setF((p) => ({ ...p, [k]: e.target.value }));
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
