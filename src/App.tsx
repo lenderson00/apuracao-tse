@@ -445,12 +445,26 @@ export default function App() {
   };
   const heatStates = candidatePick
     ? Object.fromEntries(
-        Object.entries(stateViews).map(([id, v]) => [id, candidateView(v, stateLeaders[id]?.candidates, candidatePick.candidate)]),
+        Object.entries(stateViews).map(([id, v]) => [
+          id,
+          candidateView(
+            v,
+            stateLeaders[id]?.candidates ?? (knownStates.key === selKey ? knownStates.map[id]?.candidates : undefined),
+            candidatePick.candidate,
+          ),
+        ]),
       )
     : stateViews;
   const heatMuns = candidatePick
     ? Object.fromEntries(
-        Object.entries(munViews).map(([id, v]) => [id, candidateView(v, munLeaders[id]?.candidates, candidatePick.candidate)]),
+        Object.entries(munViews).map(([id, v]) => [
+          id,
+          candidateView(
+            v,
+            munLeaders[id]?.candidates ?? (knownMuns.key === munKey ? knownMuns.map[id]?.candidates : undefined),
+            candidatePick.candidate,
+          ),
+        ]),
       )
     : munViews;
   const heatLegend = candidatePick ? <HeatLegend candidate={candidatePick.candidate} onClose={() => setCandidatePick(null)} /> : null;
@@ -693,10 +707,10 @@ export default function App() {
       {/* topo em 2 linhas: marca + busca + menu; turno e cargo */}
       <div
         ref={toolbarRef}
-        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-1.5 px-2 pt-[max(0.5rem,env(safe-area-inset-top))]"
+        className={`pointer-events-none absolute inset-x-0 top-0 ${searching ? 'z-40' : 'z-20'} flex flex-col gap-1.5 px-2 pt-[max(0.5rem,env(safe-area-inset-top))]`}
       >
         {searching ? (
-          <div className="float pointer-events-auto flex h-14 items-center gap-1 px-2">
+          <div className="float pointer-events-auto relative z-10 flex h-14 items-center gap-1 px-2">
             <MunicipalitySearch
               candidates={searchCandidates}
               onCandidate={pickCandidate}

@@ -4,30 +4,30 @@ import { mkdir } from 'node:fs/promises';
 const output = '/workspace/apuracao-shots/v6';
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true });
-for (const mobile of [false, true]) {
+for (const mobile of process.env.SHOT_MODE === 'mobile' ? [true] : [false, true]) {
   const page = await browser.newPage({
     viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 },
     isMobile: mobile,
     hasTouch: mobile,
   });
   const errors = [];
-  let zoneActive = 0,
-    zonePeak = 0,
+  const pendingZones = new Set();
+  let zonePeak = 0,
     zoneRequests = 0,
     indexRequests = 0;
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('request', (r) => {
     if (/-z\d+-c\d+/.test(r.url())) {
       zoneRequests++;
-      zonePeak = Math.max(zonePeak, ++zoneActive);
+      pendingZones.add(r);
+      zonePeak = Math.max(zonePeak, pendingZones.size);
     }
     if (r.url().endsWith('-cs.json')) indexRequests++;
   });
-  const finish = (r) => {
-    if (/-z\d+-c\d+/.test(r.url())) zoneActive--;
-  };
-  page.on('requestfinished', finish);
-  page.on('requestfailed', finish);
+  // Mede requisições aguardando resposta. requestfinished pode ser entregue depois
+  // de o navegador consumir o JSON e iniciar o próximo item da fila.
+  page.on('response', (response) => pendingZones.delete(response.request()));
+  page.on('requestfailed', (request) => pendingZones.delete(request));
   await page.goto(process.env.BASE_URL ?? 'http://127.0.0.1:4321');
   await page.getByRole('tab', { name: '1º turno', exact: true }).click();
   await page.waitForTimeout(6000);
@@ -54,10 +54,12 @@ for (const mobile of [false, true]) {
   await page.getByRole('option').filter({ hasText: 'São Paulo' }).first().getByRole('button').click();
   await page.waitForTimeout(12000);
   // O breadcrumb da UF volta ao mapa municipal sem município fixado.
-  await page
-    .getByRole('button', { name: mobile ? 'SP' : 'São Paulo', exact: true })
-    .first()
-    .click();
+  const stateCrumb = page.getByRole('button', { name: mobile ? 'SP' : 'São Paulo', exact: true }).first();
+  await stateCrumb.click().catch(async error => {
+    console.error('Navegação:', await page.title(), (await page.locator('body').innerText()).slice(-2200));
+    await page.screenshot({path: `${output}/debug-navegacao-${mobile ? 'mobile' : 'desktop'}.png`});
+    throw error;
+  });
   await page.waitForTimeout(4000);
   if (mobile) await page.getByRole('button', { name: 'Expandir painel' }).click();
   await page.getByRole('tab', { name: 'Candidato', exact: true }).click();
@@ -91,7 +93,7 @@ for (const mobile of [false, true]) {
     throw e;
   });
   assert.match(await original.getAttribute('href'), /^https:\/\/resultados\.tse\.jus\.br\/oficial\//);
-  await page.getByRole('heading', { name: 'Boletim · Seção 0001' }).evaluate(heading => {
+  await page.getByRole('heading', { name: 'Boletim · Seção 0001' }).evaluate((heading) => {
     let scroller = heading.parentElement;
     while (scroller && scroller.scrollHeight <= scroller.clientHeight) scroller = scroller.parentElement;
     if (scroller) scroller.scrollTop += heading.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;

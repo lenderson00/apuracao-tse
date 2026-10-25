@@ -20,6 +20,6 @@ node scripts/screenshots-v6.mjs
 
 As dez capturas de desktop (1440×900) e mobile (390×844) ficam em `/workspace/apuracao-shots/v6/`. O script percorre busca, país, UF, zonas de São Paulo e boletim. Também verifica carregamento sob demanda, concorrência máxima, link original, erros do navegador e ausência de scroll da página.
 
-Foram exercitados adicionalmente o detalhe direto de Porto Walter (uma zona), a resposta 404 do auxiliar e um arquivo de boletim inválido, usando interceptação de rede apenas para os dois casos de erro. As capturas usam arquivos reais do primeiro turno.
+Foram exercitados adicionalmente o detalhe direto de Porto Walter (uma zona), a resposta 404 do auxiliar e um arquivo de boletim inválido, usando interceptação de rede apenas para os dois casos de erro. As capturas usam arquivos reais do primeiro turno. A busca por número de governador foi conferida com foco automático na Bahia, seguida da busca de deputados restrita à UF e limitada a oito opções.
 
 O lint permanece com os dez avisos já existentes sobre efeitos React e uma importação não utilizada. Resultados dependem da publicação e disponibilidade do TSE; rankings parciais são identificados como dados carregados.
