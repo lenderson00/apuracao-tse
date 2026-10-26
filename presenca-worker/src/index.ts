@@ -33,7 +33,7 @@ function origemPermitida(env: Env, origin: string | null): string | null {
   const lista = env.ORIGENS.split(',').map((s) => s.trim());
   if (lista.includes(origin)) return origin;
   // previews da Vercel do projeto apuracao-tse
-  if (/^https:\/\/apuracao-tse(-[a-z0-9-]+)?\.vercel\.app$/.test(origin)) return origin;
+  if (/^https:\/\/apuracao-[a-z0-9-]+-lenderson1\.vercel\.app$/.test(origin)) return origin;
   return null;
 }
 
