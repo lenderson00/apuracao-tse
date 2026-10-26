@@ -5,6 +5,7 @@ import { candFill, candText } from '../lib/ui/color';
 import { fmtUpdatedAt, titleCase } from '../lib/ui/format';
 import { CandidateAvatar } from './CandidateAvatar';
 import { StatusPill } from './Status';
+import { LiveCount } from './LiveCount';
 import { Icon } from './ui/Icon';
 import { Int, Pct } from './ui/Num';
 import type { Insets } from './BrazilMap';
@@ -76,6 +77,7 @@ export function LiveMode({
         <span className="flex items-center gap-2.5 font-mono text-[clamp(0.75rem,0.95vw,1rem)] uppercase tracking-wider text-ink-3">
           Apuração 2026 · {round}º turno
           <StatusPill data={data} />
+          <LiveCount className="normal-case tracking-normal" />
         </span>
         <h1 className="text-[clamp(1.75rem,3.4vw,3.25rem)] font-semibold leading-[1.05] text-ink">
           {context.split(' · ')[0]} · {title}

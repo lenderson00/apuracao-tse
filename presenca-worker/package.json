@@ -1,0 +1,17 @@
+{
+  "name": "apuracao-presenca",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "carga": "node teste-carga.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "wrangler": "^4"
+  },
+  "dependencies": {
+    "typescript": "~5.9"
+  }
+}

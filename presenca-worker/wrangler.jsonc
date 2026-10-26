@@ -1,0 +1,22 @@
+{
+  // Contador "N pessoas acompanhando agora" do apuracao.lenderson.com.br.
+  // Plano Workers Free: só Durable Objects com SQLite.
+  "name": "apuracao-presenca",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "durable_objects": { "bindings": [{ "name": "SALA", "class_name": "Sala" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Sala"] }],
+  "observability": { "enabled": false },
+  "vars": {
+    // "0" desliga: o site esconde o contador e para de mandar pulsos.
+    "ATIVO": "1",
+    // abas amostradas que queremos ter ao mesmo tempo (erro ~ 1/sqrt(K))
+    "ALVO_AMOSTRA": "75",
+    // teto de requisições ao DO por dia UTC; passou disso, desliga até 00:00 UTC
+    "ORCAMENTO_DIA": "20000",
+    "MAX_POR_IP": "8",
+    "ORIGENS": "https://apuracao.lenderson.com.br,http://localhost:5173,http://localhost:4173"
+  }
+}

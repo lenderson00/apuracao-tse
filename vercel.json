@@ -2,6 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
+      "source": "/api/presenca/agora.csv",
+      "destination": "https://apuracao-presenca.plugandship.workers.dev/agora"
+    },
+    {
       "source": "/api/tse/oficial/ele2026/:path*",
       "destination": "https://resultados.tse.jus.br/oficial/ele2026/:path*"
     },
@@ -11,6 +15,23 @@
     }
   ],
   "headers": [
+    {
+      "source": "/api/presenca/agora.csv",
+      "headers": [
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "1"
+        },
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, s-maxage=10, stale-if-error=60"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=10"
+        }
+      ]
+    },
     {
       "source": "/api/tse/(.*)",
       "headers": [
