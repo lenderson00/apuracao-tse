@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 
 /**
  * "N acompanhando agora" — presença amostrada (Cloudflare Worker + Durable Object).
@@ -60,92 +60,117 @@ function lerCsv(txt: string) {
   return { n, exato: exato === 1, p, t, on: on === 1 };
 }
 
-export function usePresence(enabled = true): Presence | null {
-  const [state, setState] = useState<Presence | null>(null);
+/*
+ * Uma única instância por aba, não importa quantos <LiveCount /> estejam
+ * montados (desktop, dock, modo live): o primeiro inscrito liga, o último desliga.
+ */
+let atual: Presence | null = null;
+const ouvintes = new Set<() => void>();
+let parar: (() => void) | null = null;
 
-  useEffect(() => {
-    if (!enabled || typeof window === 'undefined' || !window.fetch || !window.crypto?.getRandomValues) return;
-    const { id, u } = idDaAba();
-    let p = 0; // só pulsa depois de saber o p do servidor
-    let ligado = false;
-    let falhasLeitura = 0;
-    let falhasPulso = 0;
-    let parado = false; // desistiu de vez (servidor desligado ou falhando)
-    let tLeitura: ReturnType<typeof setTimeout> | undefined;
-    let tPulso: ReturnType<typeof setTimeout> | undefined;
-    let ultimo: { n: number; exato: boolean; t: number } | null = null;
+function publicar(v: Presence | null) {
+  if (v?.count === atual?.count && v?.estimated === atual?.estimated) return;
+  atual = v;
+  ouvintes.forEach((f) => f());
+}
 
-    const mostrar = () => {
-      if (!ligado || !ultimo || Date.now() - ultimo.t > VELHO_MS || ultimo.n < 2) setState(null);
-      else setState({ count: ultimo.n, estimated: !ultimo.exato });
-    };
+function inscrever(f: () => void) {
+  ouvintes.add(f);
+  if (!parar) parar = iniciar();
+  return () => {
+    ouvintes.delete(f);
+    if (!ouvintes.size && parar) {
+      parar();
+      parar = null;
+      atual = null;
+    }
+  };
+}
 
-    const ler = async () => {
-      if (parado || document.hidden) return;
-      try {
-        const r = await fetch(LEITURA_URL, { cache: 'no-cache' });
-        const d = r.ok ? lerCsv(await r.text()) : null;
-        if (!d) throw new Error('leitura');
-        falhasLeitura = 0;
-        ligado = d.on;
-        p = d.on ? d.p : 0;
-        ultimo = { n: d.n, exato: d.exato, t: d.t };
-        if (!d.on) {
-          clearTimeout(tPulso);
-          tPulso = undefined;
-        }
-      } catch {
-        if (++falhasLeitura >= MAX_FALHAS) ligado = false;
+function iniciar(): () => void {
+if (typeof window === 'undefined' || !window.fetch || !window.crypto?.getRandomValues) return () => {};
+  const { id, u } = idDaAba();
+  let p = 0; // só pulsa depois de saber o p do servidor
+  let ligado = false;
+  let falhasLeitura = 0;
+  let falhasPulso = 0;
+  let parado = false; // desistiu de vez (servidor desligado ou falhando)
+  let tLeitura: ReturnType<typeof setTimeout> | undefined;
+  let tPulso: ReturnType<typeof setTimeout> | undefined;
+  let ultimo: { n: number; exato: boolean; t: number } | null = null;
+
+  const mostrar = () => {
+    if (!ligado || !ultimo || Date.now() - ultimo.t > VELHO_MS || ultimo.n < 2) publicar(null);
+    else publicar({ count: ultimo.n, estimated: !ultimo.exato });
+  };
+
+  const ler = async () => {
+    if (parado || document.hidden) return;
+    try {
+      const r = await fetch(LEITURA_URL, { cache: 'no-cache' });
+      const d = r.ok ? lerCsv(await r.text()) : null;
+      if (!d) throw new Error('leitura');
+      falhasLeitura = 0;
+      ligado = d.on;
+      p = d.on ? d.p : 0;
+      ultimo = { n: d.n, exato: d.exato, t: d.t };
+      if (!d.on) {
+        clearTimeout(tPulso);
+        tPulso = undefined;
       }
-      mostrar();
-      if (ligado && u < p && !tPulso) agendarPulso(Math.random() * 30_000);
-      tLeitura = setTimeout(ler, LEITURA_MS * (0.9 + Math.random() * 0.2));
-    };
+    } catch {
+      if (++falhasLeitura >= MAX_FALHAS) ligado = false;
+    }
+    mostrar();
+    if (ligado && u < p && !tPulso) agendarPulso(Math.random() * 30_000);
+    tLeitura = setTimeout(ler, LEITURA_MS * (0.9 + Math.random() * 0.2));
+  };
 
-    const pulsar = async () => {
-      tPulso = undefined;
-      if (parado || document.hidden || !ligado || !(u < p)) return;
-      try {
-        const r = await fetch(PULSO_URL, {
-          method: 'POST',
-          body: `${id},${u}`, // text/plain: requisição simples, sem preflight
-          keepalive: true,
-          credentials: 'omit',
-        });
-        if (!r.ok) throw new Error('pulso');
-        const j = (await r.json()) as { p: number; on: boolean };
-        falhasPulso = 0;
-        p = j.on ? j.p : 0;
-        if (!j.on) ligado = false;
-      } catch {
-        // estourou o limite grátis ou rede ruim: para de pulsar nesta aba
-        if (++falhasPulso >= MAX_FALHAS) p = 0;
-      }
-      mostrar();
-      if (ligado && u < p) agendarPulso(PULSO_MS * (0.9 + Math.random() * 0.2));
-    };
+  const pulsar = async () => {
+    tPulso = undefined;
+    if (parado || document.hidden || !ligado || !(u < p)) return;
+    try {
+      const r = await fetch(PULSO_URL, {
+        method: 'POST',
+        body: `${id},${u}`, // text/plain: requisição simples, sem preflight
+        keepalive: true,
+        credentials: 'omit',
+      });
+      if (!r.ok) throw new Error('pulso');
+      const j = (await r.json()) as { p: number; on: boolean };
+      falhasPulso = 0;
+      p = j.on ? j.p : 0;
+      if (!j.on) ligado = false;
+    } catch {
+      // estourou o limite grátis ou rede ruim: para de pulsar nesta aba
+      if (++falhasPulso >= MAX_FALHAS) p = 0;
+    }
+    mostrar();
+    if (ligado && u < p) agendarPulso(PULSO_MS * (0.9 + Math.random() * 0.2));
+  };
 
-    const agendarPulso = (ms: number) => {
-      clearTimeout(tPulso);
-      tPulso = setTimeout(pulsar, ms);
-    };
+  const agendarPulso = (ms: number) => {
+    clearTimeout(tPulso);
+    tPulso = setTimeout(pulsar, ms);
+  };
 
-    const visibilidade = () => {
-      clearTimeout(tLeitura);
-      clearTimeout(tPulso);
-      tLeitura = tPulso = undefined;
-      if (!document.hidden) ler();
-    };
+  const visibilidade = () => {
+    clearTimeout(tLeitura);
+    clearTimeout(tPulso);
+    tLeitura = tPulso = undefined;
+    if (!document.hidden) ler();
+  };
 
-    document.addEventListener('visibilitychange', visibilidade);
-    ler();
-    return () => {
-      parado = true;
-      clearTimeout(tLeitura);
-      clearTimeout(tPulso);
-      document.removeEventListener('visibilitychange', visibilidade);
-    };
-  }, [enabled]);
+  document.addEventListener('visibilitychange', visibilidade);
+  ler();
+  return () => {
+    parado = true;
+    clearTimeout(tLeitura);
+    clearTimeout(tPulso);
+    document.removeEventListener('visibilitychange', visibilidade);
+  };
+}
 
-  return state;
+export function usePresence(): Presence | null {
+  return useSyncExternalStore(inscrever, () => atual, () => null);
 }

@@ -11,14 +11,15 @@ const ESTIMADO = { notation: 'compact', compactDisplay: 'short', maximumSignific
  * Pill "● 12.483 acompanhando agora". Quando é estimativa por amostragem,
  * mostra "~12 mil" e diz isso no title. Some sozinha se o serviço falhar.
  */
-export function LiveCount({ className }: { className?: string }) {
+export function LiveCount({ className, compact }: { className?: string; /** só o número ("~12 mil"), para o cabeçalho apertado do celular */ compact?: boolean }) {
   const presence = usePresence();
   if (!presence) return null;
   const { count, estimated } = presence;
   return (
     <span
       className={clsx('pill pill-done', className)}
-      title={estimated ? 'Estimativa por amostragem das abas abertas agora' : 'Abas abertas no site agora'}
+      title={`${estimated ? 'Estimativa por amostragem: ' : ''}${count.toLocaleString('pt-BR')} acompanhando agora`}
+      aria-label={`${estimated ? 'cerca de ' : ''}${count.toLocaleString('pt-BR')} pessoas acompanhando agora`}
     >
       <span className="live-dot" style={{ color: '#5ee0a0' }} aria-hidden />
       <NumberFlow
@@ -32,7 +33,7 @@ export function LiveCount({ className }: { className?: string }) {
         respectMotionPreference
         willChange={false}
       />
-      <span>acompanhando agora</span>
+      <span aria-hidden>{compact ? 'agora' : 'acompanhando agora'}</span>
     </span>
   );
 }

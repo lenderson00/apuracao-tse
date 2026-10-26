@@ -9,6 +9,7 @@ import { hasStarted } from '../lib/ui/turnout';
 import { CandidateAvatar } from './CandidateAvatar';
 import { Evolution } from './Evolution';
 import { StatusPill } from './Status';
+import { LiveCount } from './LiveCount';
 import { NetNotice } from './NetNotice';
 import { ShareButton } from './ShareButton';
 import { Icon } from './ui/Icon';
@@ -268,6 +269,7 @@ function MobileSheet({
           </div>
           <span className="flex shrink-0 items-center gap-1">
             <StatusPill data={data} className="shrink-0" />
+            <LiveCount compact className="shrink-0" />
             <ShareButton data={data} title={props.title} photoUf={props.photoUf} compact className="-mr-1.5" />
           </span>
         </div>

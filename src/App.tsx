@@ -22,6 +22,7 @@ import { Zones } from './components/Zones';
 import { Dock } from './components/Dock';
 import { hasStarted } from './lib/ui/turnout';
 import { StatusPill } from './components/Status';
+import { LiveCount } from './components/LiveCount';
 import { MunicipalitySearch } from './components/MunicipalitySearch';
 import { Icon } from './components/ui/Icon';
 import { Tabs } from './components/ui/Tabs';
@@ -543,7 +544,12 @@ export default function App() {
     <StateChooser runoff={runoffGov} officeLabel={office.label} stateViews={stateViews} onPick={goState} mobile={!desktop} />
   ) : undefined;
 
-  const statusPill = <StatusPill data={shown} />;
+  const statusPill = (
+    <span className="flex items-center gap-1.5">
+      <StatusPill data={shown} />
+      <LiveCount />
+    </span>
+  );
   const mobileCrumbs = crumbs.length > 1 ? <Breadcrumb items={crumbs} bare /> : undefined;
 
   const dock = (
