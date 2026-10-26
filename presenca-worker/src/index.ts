@@ -189,7 +189,8 @@ export class Sala extends DurableObject<Env> {
       this.limpar(agora, e, true);
       return true;
     }
-    if (ideal > e.p * 1.25 && agora - e.aumento > 120_000) {
+    // a histerese de 1.25x não pode travar p logo abaixo de 1 numa sala pequena
+    if ((ideal > e.p * 1.25 || (ideal === 1 && e.p < 1)) && agora - e.aumento > 120_000) {
       e.pAntes = e.p;
       e.p = Math.min(ideal, e.p * 2);
       e.aumento = agora;

@@ -15,7 +15,7 @@
     // abas amostradas que queremos ter ao mesmo tempo (erro ~ 1/sqrt(K))
     "ALVO_AMOSTRA": "75",
     // teto de requisições ao DO por dia UTC; passou disso, desliga até 00:00 UTC
-    "ORCAMENTO_DIA": "20000",
+    "ORCAMENTO_DIA": "10000",
     "MAX_POR_IP": "8",
     "ORIGENS": "https://apuracao.lenderson.com.br,http://localhost:5173,http://localhost:4173"
   }
